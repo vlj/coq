@@ -434,6 +434,7 @@ let descr () = match lang () with
   | Haskell -> Haskell.haskell_descr
   | Scheme -> Scheme.scheme_descr
   | JSON -> Json.json_descr
+  | CPP -> Cpp.cpp_descr
 
 (* From a filename string "foo.ml" or "foo", builds "foo.ml" and "foo.mli"
    Works similarly for the other languages. *)

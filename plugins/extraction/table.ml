@@ -614,7 +614,7 @@ let () = declare_string_option
 
 (*s Extraction Lang *)
 
-type lang = Ocaml | Haskell | Scheme | JSON
+type lang = Ocaml | Haskell | Scheme | JSON | CPP
 
 let lang_ref = Summary.ref Ocaml ~name:"ExtrLang"
 
