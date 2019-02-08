@@ -41,16 +41,20 @@ let pr_id id =
 
 let paren = pp_par true
 
+let brace = fun s -> str "{" ++ s ++ str "}"
+
+let arrow = fun s -> str "<" ++ s ++ str ">"
+
 let pp_template_untyped st = function
   | [] -> assert false
   | [id] -> paren (str "lambda " ++ paren (pr_id id) ++ spc () ++ st)
-  | l -> str "template<Typename T> constexpr auto f<" ++ (prlist_with_sep spc pr_id l) ++ str ">();" ++ fnl () ++ st
+  | l -> str "template<typename T> constexpr auto f<" ++ (prlist_with_sep  (fun _ -> str ",") pr_id l) ++ str ">();" ++ fnl () ++ st
 
 let pp_apply st _ = function
   | [] -> st
   | [a] -> hov 2 (paren (st ++ spc () ++ a))
-  | args -> hov 2 (paren (str "@ " ++ st ++
-                          (prlist_strict (fun x -> spc () ++ x) args)))
+  | args -> hov 2 (st ++ str "::f" ++ arrow
+                          (prlist_strict (fun x -> str "," ++ x) args) ++ str "()" )
 
 (*s The pretty-printer for Scheme syntax *)
 
@@ -86,10 +90,8 @@ let rec pp_expr env args =
   | MLcons (_,r,args') ->
     assert (List.is_empty args);
     let st =
-      str "`" ++
-      paren (pp_global Cons r ++
-             (if List.is_empty args' then mt () else spc ()) ++
-             prlist_with_sep spc (pp_cons_args env) args')
+      pp_global Cons r ++ arrow(
+             prlist_with_sep spc (pp_cons_args env) args') ++ brace (mt ())
     in
     if is_coinductive r then paren (str "delay " ++ st) else st
   | MLtuple _ -> user_err Pp.(str "Cannot handle tuples in Scheme yet.")
@@ -146,9 +148,12 @@ and pp_template_parameter_list env (ids,p,t) =
 and pp_template_typecase env pv =
   prvect_with_sep fnl
     (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
-      let type_decl = prlist_strict (fun s -> str "typename " ++ s) types in
-      let type_inst = prlist_strict (fun s -> s) types in
-      hov 2 (str "template<" ++ type_decl ++ str"> constexpr auto f<" ++ cons ++ str "<" ++ type_inst ++ str ">" ++ str ">()" ++ spc () ++ str "{" ++ str "return " ++ s2 ++ str ";" ++ str "}" ++ fnl ())) pv
+      let type_decl = prlist_strict (fun s -> str "typename " ++ s) types and
+      type_specialization =
+      if List.is_empty types
+        then str ""
+        else arrow (prlist_strict (fun s -> s) types) in
+      hov 2 (str "template<" ++ type_decl ++ str"> constexpr auto f<" ++ cons ++ type_specialization ++ str ">()" ++ spc () ++ str "{" ++ str "return " ++ s2 ++ str ";" ++ str "}" ++ fnl ())) pv
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
@@ -182,9 +187,9 @@ let pp_decl = function
          if void then mt ()
          else
            hov 2
-             (paren (str "namespace " ++ names.(i) ++ spc () ++ str "{"++
+             (str "namespace " ++ names.(i) ++ spc () ++ brace (
                      (if is_custom r then str (find_custom r)
-                      else pp_expr (empty_env ()) [] defs.(i)) ++ str "}")
+                      else pp_expr (empty_env ()) [] defs.(i)) )
               ++ fnl ()) ++ fnl ())
       rv
   | Dterm (r, a, _) ->
