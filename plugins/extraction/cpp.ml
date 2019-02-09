@@ -48,7 +48,7 @@ let pp_template_untyped st =
  function
   | [] -> assert false
   | [id] -> template_declaration (pr_id id)
-  | l -> template_declaration (prlist_with_sep  (fun _ -> str ", typename ") pr_id l)
+  | l -> template_declaration (prlist_with_sep  (fun _ -> str ",") (fun s -> str "typename " ++ pr_id s) l)
 
 let pp_apply st _ = function
   | [] -> st
