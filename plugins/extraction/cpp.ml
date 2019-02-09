@@ -54,7 +54,7 @@ let pp_apply st _ = function
   | [] -> st
   | [a] -> hov 2 (paren (st ++ spc () ++ a))
   | args -> hov 2 (str "typename " ++ st ++ str "::impl" ++ arrow (
-                          (prlist_strict (fun x -> str "," ++ x) args)) ++ str "::exec" )
+                          (prlist_with_sep (fun x -> str ",") (fun x -> x ) args)) ++ str "::exec" )
 
 (*s The pretty-printer for Scheme syntax *)
 
@@ -131,7 +131,7 @@ and pp_cons_args env = function
     paren (pp_global Cons r ++
            (if List.is_empty args then mt () else spc ()) ++
            prlist_with_sep spc (pp_cons_args env) args)
-  | e -> str "," ++ pp_expr env [] e
+  | e -> pp_expr env [] e
 
 and pp_template_parameter_list env (ids,p,t) =
   let r = match p with
