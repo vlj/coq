@@ -46,8 +46,8 @@ let arrow = fun s -> str "<" ++ s ++ str ">"
 let pp_template_untyped st =
   let template_declaration =
     function parameters ->
-        str "template" ++ (arrow parameters) ++ str " struct impl" ++ fnl () ++
-        (brace st) ++ str ";" in
+        hov 2 (str "template" ++ (arrow parameters) ++ str " struct impl" ++
+        (brace (fnl () ++ st)) ++ str ";") in
  function
   | [] -> assert false
   | [id] -> template_declaration (pr_id id)
@@ -56,8 +56,8 @@ let pp_template_untyped st =
 let pp_apply st _ = function
   | [] -> st
   | [a] -> hov 2 (paren (st ++ spc () ++ a))
-  | args -> hov 2 (str "typename " ++ st ++ str "::impl" ++ arrow (
-                          (prlist_with_sep (fun x -> str ",") (fun x -> x ) args)) ++ str "::exec" )
+  | args -> str "typename " ++ st ++ str "::impl" ++ arrow (
+                          (prlist_with_sep (fun x -> str ",") (fun x -> x ) args)) ++ str "::exec"
 
 (*s The pretty-printer for Scheme syntax *)
 
@@ -65,7 +65,7 @@ let pp_global k r = str (Common.pp_global k r)
 
 (*s Pretty-printing of expressions.  *)
 
-let rec pp_expr ?(bound_lambda_variables=[]) env args =
+let rec pp_expr env args =
   let apply st = pp_apply st true args in
   function
   | MLrel n ->
@@ -77,7 +77,7 @@ let rec pp_expr ?(bound_lambda_variables=[]) env args =
     let fl,a' = collect_lams a in
     let fl,env' = push_vars (List.map id_of_mlid fl) env in
     let listrevfl = List.rev fl in
-    apply (pp_template_untyped (pp_expr env' [] a' ~bound_lambda_variables:listrevfl) listrevfl)
+    apply (pp_template_untyped (pp_expr env' [] a') listrevfl)
   | MLletin (id,a1,a2) ->
     let i,env' = push_vars [id_of_mlid id] env in
     apply
@@ -158,11 +158,11 @@ and pp_template_typecase matched_expr env pv =
         pattern_matching_case_define =
           let type_decl = prlist_strict (fun s -> str "typename " ++ s) types in
             str "template<" ++ type_decl ++ str"> struct pattern_matching" ++ arrow(cons ++ type_specialization) and
-        instantiation = str "using exec = typename pattern_matching" ++ (arrow matched_expr) ++ str "::exec ;"
+        instantiation = str "using exec = typename pattern_matching" ++ (arrow matched_expr) ++ str "::exec;" ++ fnl ()
       in
-      hov 2 ( pattern_matching_decl ++ fnl2 () ++ pattern_matching_case_define ++
-        brace(fnl () ++
-          str "using exec = " ++ s2 ++ str ";" ++ fnl ()) ++ str ";" ++ fnl2 () ++ instantiation)) pv
+      pattern_matching_decl ++ fnl2 () ++ pattern_matching_case_define ++
+        brace (fnl () ++
+          str "using exec = " ++ s2 ++ str ";" ++ fnl ()) ++ str ";" ++ fnl2 () ++ instantiation) pv
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
