@@ -62,7 +62,7 @@ let pp_global k r = str (Common.pp_global k r)
 
 (*s Pretty-printing of expressions.  *)
 
-let rec pp_expr env args =
+let rec pp_expr ?(bound_lambda_variables=[]) env args =
   let apply st = pp_apply st true args in
   function
   | MLrel n ->
@@ -73,7 +73,8 @@ let rec pp_expr env args =
   | MLlam _ as a ->
     let fl,a' = collect_lams a in
     let fl,env' = push_vars (List.map id_of_mlid fl) env in
-    apply (pp_template_untyped (pp_expr env' [] a') (List.rev fl))
+    let listrevfl = List.rev fl in
+    apply (pp_template_untyped (pp_expr env' [] a' ~bound_lambda_variables:listrevfl) listrevfl)
   | MLletin (id,a1,a2) ->
     let i,env' = push_vars [id_of_mlid id] env in
     apply
@@ -109,11 +110,11 @@ let rec pp_expr env args =
              prvect (fun tr -> pp_expr env [] (mkfun tr) ++ fnl ()) pv
              ++ pp_expr env [] t)))
   | MLcase (typ,t, pv) ->
-    let e =
+    let matched_expr =
       if not (is_coinductive_type typ) then pp_expr env [] t
       else paren (str "force" ++ spc () ++ pp_expr env [] t)
     in
-    apply (v 3 (pp_template_typecase env pv))
+    apply (v 3 (pp_template_typecase matched_expr bound_lambda_variables env pv))
   | MLfix (i,ids,defs) ->
     let ids',env' = push_vars (List.rev (Array.to_list ids)) env in
     pp_fix env' i (Array.of_list (List.rev ids'),defs) args
@@ -145,16 +146,19 @@ and pp_template_parameter_list env (ids,p,t) =
   in
   (pp_global Cons r), args, (pp_expr env' [] t)
 
-and pp_template_typecase env pv =
+and pp_template_typecase filtered_env bound_lambda_variables env pv =
   prvect_with_sep fnl
     (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
-      let type_decl = prlist_strict (fun s -> str "typename " ++ s) types and
+      let bound_variable_in_type_decl = prlist_strict (fun s -> pr_id s) bound_lambda_variables in
+      let type_decl = (prlist_strict (fun s -> str "typename " ++ s) types) ++ bound_variable_in_type_decl and
       type_specialization =
         if List.is_empty types
           then str ""
           else arrow (prlist_strict (fun s -> s) types) in
       hov 2 (str "template<" ++ type_decl ++ str"> struct impl" ++ arrow(cons ++ type_specialization) ++ fnl () ++
-        brace(fnl () ++ str "using exec = " ++ s2 ++ str ";" ++ fnl ()) ++ str ";" ++ fnl ())) pv
+        brace(fnl () ++
+          str "using " ++ filtered_env ++ str " = " ++ cons ++ type_specialization ++ str ";" ++ fnl () ++
+          str "using exec = " ++ s2 ++ str ";" ++ fnl ()) ++ str ";" ++ fnl ())) pv
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
