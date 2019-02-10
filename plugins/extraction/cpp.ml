@@ -44,7 +44,10 @@ let brace = fun s -> str "{" ++ s ++ str "}"
 let arrow = fun s -> str "<" ++ s ++ str ">"
 
 let pp_template_untyped st =
-  let template_declaration = function parameters -> str "template" ++ (arrow parameters) ++ str " struct impl" ++ fnl () ++ str "{};" ++ fnl () ++ fnl () ++ st in
+  let template_declaration =
+    function parameters ->
+        str "template" ++ (arrow parameters) ++ str " struct impl" ++ fnl () ++
+        (brace st) ++ str ";" in
  function
   | [] -> assert false
   | [id] -> template_declaration (pr_id id)
@@ -114,7 +117,7 @@ let rec pp_expr ?(bound_lambda_variables=[]) env args =
       if not (is_coinductive_type typ) then pp_expr env [] t
       else paren (str "force" ++ spc () ++ pp_expr env [] t)
     in
-    apply (v 3 (pp_template_typecase matched_expr bound_lambda_variables env pv))
+    apply (v 3 (pp_template_typecase matched_expr env pv))
   | MLfix (i,ids,defs) ->
     let ids',env' = push_vars (List.rev (Array.to_list ids)) env in
     pp_fix env' i (Array.of_list (List.rev ids'),defs) args
@@ -146,19 +149,20 @@ and pp_template_parameter_list env (ids,p,t) =
   in
   (pp_global Cons r), args, (pp_expr env' [] t)
 
-and pp_template_typecase filtered_env bound_lambda_variables env pv =
+and pp_template_typecase matched_expr env pv =
   prvect_with_sep fnl
     (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
-      let bound_variable_in_type_decl = prlist_strict (fun s -> pr_id s) bound_lambda_variables in
-      let type_decl = (prlist_strict (fun s -> str "typename " ++ s) types) ++ bound_variable_in_type_decl and
-      type_specialization =
-        if List.is_empty types
-          then str ""
-          else arrow (prlist_strict (fun s -> s) types) in
-      hov 2 (str "template<" ++ type_decl ++ str"> struct impl" ++ arrow(cons ++ type_specialization) ++ fnl () ++
+      let type_specialization =
+        if List.is_empty types then mt () else arrow (prlist_strict (fun s -> s) types) in
+        let pattern_matching_decl = str "template<typename T> struct pattern_matching;" and
+        pattern_matching_case_define =
+          let type_decl = prlist_strict (fun s -> str "typename " ++ s) types in
+            str "template<" ++ type_decl ++ str"> struct pattern_matching" ++ arrow(cons ++ type_specialization) and
+        instantiation = str "using exec = typename pattern_matching" ++ (arrow matched_expr) ++ str "::exec ;"
+      in
+      hov 2 ( pattern_matching_decl ++ fnl2 () ++ pattern_matching_case_define ++
         brace(fnl () ++
-          str "using " ++ filtered_env ++ str " = " ++ cons ++ type_specialization ++ str ";" ++ fnl () ++
-          str "using exec = " ++ s2 ++ str ";" ++ fnl ()) ++ str ";" ++ fnl ())) pv
+          str "using exec = " ++ s2 ++ str ";" ++ fnl ()) ++ str ";" ++ fnl2 () ++ instantiation)) pv
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
