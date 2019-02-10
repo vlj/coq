@@ -47,7 +47,7 @@ let pp_template_untyped st =
   let template_declaration =
     function parameters ->
         hov 2 (str "template" ++ (arrow parameters) ++ str " struct impl" ++
-        (brace (fnl () ++ st)) ++ str ";") in
+        (brace (fnl () ++ st ++ fnl())) ++ str ";" ++ fnl ()) in
  function
   | [] -> assert false
   | [id] -> template_declaration (pr_id id)
