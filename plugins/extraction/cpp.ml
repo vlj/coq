@@ -178,10 +178,36 @@ and pp_fix env j (ids,bl) args =
            fnl () ++
            hov 2 (pp_apply (pr_id (ids.(j))) true args))))
 
+let pp_newtype ip pl cv =
+  let pp_ctor = fun idx ctor ->
+    let name = pp_global Cons (ConstructRef (ip, idx + 1))
+    and count = List.length ctor in
+      str "template<> struct " ++ name ++ str "{};"
+  in
+    str "namespace " ++ pp_global Type (IndRef ip) ++
+    brace (
+      prvecti pp_ctor cv
+    ) ++
+    fnl ()
+
+
+(**[
+    ("what", json_str "decl:ind");
+    ("name", json_global Type (IndRef ip));
+    ("argnames", json_list (List.map json_id pl));
+    ("constructors", json_listarr (Array.mapi (fun idx c -> json_dict [
+        ("name", json_global Cons (ConstructRef (ip, idx+1)));
+        ("argtypes", json_list (List.map (json_type pl) c))
+      ]) cv))
+  ]*)
+
+
 (*s Pretty-printing of a declaration. *)
 
 let pp_decl = function
-  | Dind _ -> mt ()
+  | Dind (kn, defs) -> prvecti_with_sep spc
+      (fun i p -> if p.ip_logical then str ""
+     else pp_newtype (kn, i) p.ip_vars p.ip_types) defs.ind_packets
   | Dtype _ -> mt ()
   | Dfix (rv, defs,_) ->
     let names = Array.map
