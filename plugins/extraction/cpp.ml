@@ -43,6 +43,8 @@ let paren = pp_par true
 let brace = fun s -> str "{" ++ s ++ str "}"
 let arrow = fun s -> str "<" ++ s ++ str ">"
 
+let semicolon = fun () -> str ";"
+
 let pp_template_untyped st =
   let template_declaration =
     function parameters ->
@@ -178,17 +180,64 @@ and pp_fix env j (ids,bl) args =
            fnl () ++
            hov 2 (pp_apply (pr_id (ids.(j))) true args))))
 
+  (**
+let rec json_type vl = function
+  | Tmeta _ | Tvar' _ -> assert false
+  | Tvar i -> (try
+      let varid = List.nth vl (pred i) in json_dict [
+        ("what", json_str "type:var");
+        ("name", json_id varid)
+      ]
+    with Failure _ -> json_dict [
+        ("what", json_str "type:varidx");
+        ("name", json_int i)
+      ])
+  | Tglob (r, l) -> json_dict [
+      ("what", json_str "type:glob");
+      ("name", json_global Type r);
+      ("args", json_list (List.map (json_type vl) l))
+    ]
+  | Tarr (t1,t2) -> json_dict [
+      ("what", json_str "type:arrow");
+      ("left", json_type vl t1);
+      ("right", json_type vl t2)
+    ]
+  | Tdummy _ -> json_dict [("what", json_str "type:dummy")]
+  | Tunknown -> json_dict [("what", json_str "type:unknown")]
+  | Taxiom -> json_dict [("what", json_str "type:axiom")]
+ *)
+
+ let rec type_alias = function
+  | Tmeta _ | Tvar' _ -> assert false
+  | Tvar i -> str "tvar"
+  | Tglob (r, l) -> pp_global Type r
+  | Tarr (t1,t2) -> str "tarr"
+  | Tdummy _ -> str "tdummy"
+  | Tunknown -> str "tunknow"
+  | Taxiom -> str "taxiom"
+
+
+(** Declare a new algebraic type *)
 let pp_newtype ip pl cv =
-  let pp_ctor = fun idx ctor ->
-    let name = pp_global Cons (ConstructRef (ip, idx + 1))
-    and count = List.length ctor in
-      str "template<> struct " ++ name ++ str "{};"
-  in
-    str "namespace " ++ pp_global Type (IndRef ip) ++
-    brace (
-      prvecti pp_ctor cv
-    ) ++
-    fnl ()
+  let main_type_name = pp_global Type (IndRef ip) in
+    let pp_ctor = fun idx ctor ->
+      let generic_name = pp_global Cons (ConstructRef (ip, idx + 1)) in
+      if List.is_empty ctor
+        then generic_name, str "struct " ++ generic_name ++ str "{};"
+        else
+          let tmp = fun s -> s |> type_alias |> (fun s -> str "std::unique_ptr" ++ arrow s) in
+            let typename_parametrization = prlist_with_sep (fun _ -> str ",") (fun _ -> str "typename T") ctor
+            and name_param = prlist_with_sep (fun _ -> str ",") tmp ctor
+            in
+              generic_name ++ arrow name_param,
+              str "template " ++ arrow typename_parametrization ++ str "struct " ++ generic_name ++ brace (mt ()) ++ semicolon ()
+    in let subtype_name = Array.mapi pp_ctor cv in
+      let forward_declaration = str "struct " ++ main_type_name ++ semicolon ()
+      and constructor_declarations = prvect_with_sep fnl snd subtype_name
+      and variant_decl = str "using " ++ pp_global Type (IndRef ip) ++ str " = std::variant" ++ arrow (prvect_with_sep (fun _ -> str ",") fst subtype_name) ++ str ";"
+      and actual_decl = str "struct " ++ pp_global Type (IndRef ip) ++ (brace (main_type_name ++ str " value;"))
+      in
+        forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++  variant_decl ++ fnl() ++ actual_decl ++ fnl()
 
 
 (**[
@@ -203,6 +252,17 @@ let pp_newtype ip pl cv =
 
 
 (*s Pretty-printing of a declaration. *)
+
+(** template<class... Ts> struct overload : Ts... { using Ts::operator()...; };
+template<class... Ts> overload(Ts...) -> overload<Ts...>;
+
+std::variant<int, float> intFloat { 0.0f };
+std::visit(overload(
+    [](const int& i) { ... },
+    [](const float& f) { ... },
+  ),
+  intFloat;
+); *)
 
 let pp_decl = function
   | Dind (kn, defs) -> prvecti_with_sep spc
