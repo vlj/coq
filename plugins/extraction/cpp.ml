@@ -34,7 +34,11 @@ let pp_header_comment = function
   | Some com -> pp_comment com ++ fnl () ++ fnl ()
 
 let preamble _ comment _ usf =
-  pp_header_comment comment
+  pp_header_comment comment ++
+  str "#include <variant>" ++ fnl () ++
+  str "#include <memory>" ++ fnl () ++
+  str "template<class... Ts> struct overload : Ts... { using Ts::operator()...; };" ++ fnl () ++
+  str "template<class... Ts> overload(Ts...) -> overload<Ts...>;" ++ fnl ()
 
 let pr_id id =
   str @@ String.map (fun c -> if c == '\'' then '~' else c) (Id.to_string id)
@@ -153,13 +157,12 @@ and pp_template_parameter_list env (ids,p,t) =
 
 and pp_template_typecase matched_expr env pv =
   let pattern = (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
-      let type_specialization =
-        if List.is_empty types then mt () else arrow (prlist_strict (fun s -> s) types) in
-        let pattern_matching_decl = str "auto visit" ++ paren (cons ++ type_specialization)
+      let type_specialization = mt () in
+(*        if List.is_empty types then mt () else arrow (prlist_strict (fun s -> s) types) in **)
+        let pattern_matching_decl = str "[&]" ++ paren (cons ++ type_specialization)
       in pattern_matching_decl ++ brace (str "return " ++ s2 ++ semicolon ())) in
-  let visitor_decl = str "struct visitor" ++ brace (fnl () ++ prvect_with_sep fnl pattern pv ++ fnl ()) ++ semicolon () and
-  visitor_exec = str "std::visit" ++ paren (str "visitor{}, " ++ matched_expr) ++ semicolon () in
-    visitor_decl ++ fnl() ++ visitor_exec
+  let overload_call = str "overload" ++ paren (prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv) in
+    str "std::visit" ++ paren (overload_call ++ str "," ++ matched_expr) ++ semicolon ()
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
@@ -216,16 +219,15 @@ let rec json_type vl = function
 let pp_newtype ip pl cv =
   let main_type_name = pp_global Type (IndRef ip) in
     let pp_ctor = fun idx ctor ->
-      let generic_name = pp_global Cons (ConstructRef (ip, idx + 1)) in
-      if List.is_empty ctor
-        then generic_name, str "struct " ++ generic_name ++ str "{};"
-        else
-          let tmp = fun s -> s |> type_alias |> (fun s -> str "std::unique_ptr" ++ arrow s) in
-            let typename_parametrization = prlist_with_sep (fun _ -> str ",") (fun _ -> str "typename T") ctor
-            and name_param = prlist_with_sep (fun _ -> str ",") tmp ctor
-            in
-              generic_name ++ arrow name_param,
-              str "template " ++ arrow typename_parametrization ++ str "struct " ++ generic_name ++ brace (mt ()) ++ semicolon ()
+      let generic_name = pp_global Cons (ConstructRef (ip, idx + 1))
+      and members =
+        if List.is_empty ctor
+          then
+            mt ()
+          else
+            let tmp = fun s -> s |> type_alias |> (fun s -> str "std::unique_ptr" ++ arrow s ++ str " value" ++ semicolon()) in
+              prlist_with_sep fnl tmp ctor
+      in generic_name, str "struct " ++ generic_name ++ brace members ++ semicolon ()
     in let subtype_name = Array.mapi pp_ctor cv in
       let forward_declaration = str "struct " ++ main_type_name ++ semicolon ()
       and constructor_declarations = prvect_with_sep fnl snd subtype_name
@@ -276,11 +278,12 @@ let pp_decl = function
          in
          if void then mt ()
          else
-           hov 2
-             (str "const auto " ++ names.(i) ++ str " = " ++
+          let fixpoint_version = str "const auto " ++ names.(i) ++ str "W" ++ str " = " ++
                      (if is_custom r then str (find_custom r)
-                      else pp_expr (empty_env ()) [] defs.(i))
-              ++ fnl ()) ++ fnl ())
+                      else pp_expr (empty_env ()) [] defs.(i)) in
+           hov 2
+             (fixpoint_version
+              ++ fnl () ++ str "const auto " ++ names.(i) ++ str " = " ++ names.(i) ++ str "W" ++ paren (names.(i) ++ str "W")) ++ fnl ())
       rv
   | Dterm (r, a, _) ->
     if is_inline_custom r then mt ()
