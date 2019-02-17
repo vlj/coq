@@ -45,21 +45,21 @@ let arrow = fun s -> str "<" ++ s ++ str ">"
 
 let semicolon = fun () -> str ";"
 
-let pp_template_untyped st =
-  let template_declaration =
+let pp_lambda_decl st =
+  let lambda_signature =
     function parameters ->
-        hov 2 (str "template" ++ (arrow parameters) ++ str " struct impl" ++
+        hov 2 (str "[]" ++ (paren parameters) ++
         (brace (fnl () ++ st ++ fnl())) ++ str ";" ++ fnl ()) in
  function
   | [] -> assert false
-  | [id] -> template_declaration (pr_id id)
-  | l -> template_declaration (prlist_with_sep  (fun _ -> str ",") (fun s -> str "typename " ++ pr_id s) l)
+  | [id] -> lambda_signature (pr_id id)
+  | l -> lambda_signature (prlist_with_sep  (fun _ -> str ",") (fun s -> str "auto " ++ pr_id s) l)
 
 let pp_apply st _ = function
   | [] -> st
   | [a] -> hov 2 (paren (st ++ spc () ++ a))
-  | args -> str "typename " ++ st ++ str "::impl" ++ arrow (
-                          (prlist_with_sep (fun x -> str ",") (fun x -> x ) args)) ++ str "::exec"
+  | args -> st ++ paren (
+                          (prlist_with_sep (fun x -> str ",") (fun x -> x ) args))
 
 (*s The pretty-printer for Scheme syntax *)
 
@@ -79,7 +79,7 @@ let rec pp_expr env args =
     let fl,a' = collect_lams a in
     let fl,env' = push_vars (List.map id_of_mlid fl) env in
     let listrevfl = List.rev fl in
-    apply (pp_template_untyped (pp_expr env' [] a') listrevfl)
+    apply (pp_lambda_decl (pp_expr env' [] a') listrevfl)
   | MLletin (id,a1,a2) ->
     let i,env' = push_vars [id_of_mlid id] env in
     apply
@@ -96,8 +96,8 @@ let rec pp_expr env args =
   | MLcons (_,r,args') ->
     assert (List.is_empty args);
     let st =
-      pp_global Cons r ++ (if List.is_empty args' then mt() else arrow(
-             prlist_with_sep spc (pp_cons_args env) args'))
+      pp_global Cons r ++ brace (
+             prlist_with_sep spc (pp_cons_args env) args')
     in
     if is_coinductive r then paren (str "delay " ++ st) else st
   | MLtuple _ -> user_err Pp.(str "Cannot handle tuples in Scheme yet.")
@@ -152,19 +152,14 @@ and pp_template_parameter_list env (ids,p,t) =
   (pp_global Cons r), args, (pp_expr env' [] t)
 
 and pp_template_typecase matched_expr env pv =
-  prvect_with_sep fnl
-    (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
+  let pattern = (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
       let type_specialization =
         if List.is_empty types then mt () else arrow (prlist_strict (fun s -> s) types) in
-        let pattern_matching_decl = str "template<typename T> struct pattern_matching;" and
-        pattern_matching_case_define =
-          let type_decl = prlist_strict (fun s -> str "typename " ++ s) types in
-            str "template<" ++ type_decl ++ str"> struct pattern_matching" ++ arrow(cons ++ type_specialization) and
-        instantiation = str "using exec = typename pattern_matching" ++ (arrow matched_expr) ++ str "::exec;" ++ fnl ()
-      in
-      pattern_matching_decl ++ fnl2 () ++ pattern_matching_case_define ++
-        brace (fnl () ++
-          str "using exec = " ++ s2 ++ str ";" ++ fnl ()) ++ str ";" ++ fnl2 () ++ instantiation) pv
+        let pattern_matching_decl = str "auto visit" ++ paren (cons ++ type_specialization)
+      in pattern_matching_decl ++ brace (str "return " ++ s2 ++ semicolon ())) in
+  let visitor_decl = str "struct visitor" ++ brace (fnl () ++ prvect_with_sep fnl pattern pv ++ fnl ()) ++ semicolon () and
+  visitor_exec = str "std::visit" ++ paren (str "visitor{}, " ++ matched_expr) ++ semicolon () in
+    visitor_decl ++ fnl() ++ visitor_exec
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
@@ -282,9 +277,9 @@ let pp_decl = function
          if void then mt ()
          else
            hov 2
-             (str "namespace " ++ names.(i) ++ brace ( fnl() ++
+             (str "const auto " ++ names.(i) ++ str " = " ++
                      (if is_custom r then str (find_custom r)
-                      else pp_expr (empty_env ()) [] defs.(i)) )
+                      else pp_expr (empty_env ()) [] defs.(i))
               ++ fnl ()) ++ fnl ())
       rv
   | Dterm (r, a, _) ->
