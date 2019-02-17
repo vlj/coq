@@ -71,11 +71,12 @@ let pp_lambda_decl st =
   let lambda_signature =
     function parameters ->
         hov 2 (str "[]" ++ (paren parameters) ++
-        (brace (fnl () ++ st ++ fnl())) ++ fnl ()) in
+        (brace (fnl () ++ st ++ fnl())) ++ fnl ()) and
+  autoify = (fun s -> str "auto " ++ pr_id s)  in
  function
   | [] -> assert false
-  | [id] -> lambda_signature (pr_id id)
-  | l -> lambda_signature (prlist_with_sep  (fun _ -> str ",") (fun s -> str "auto " ++ pr_id s) l)
+  | [id] -> lambda_signature (autoify id)
+  | l -> lambda_signature (prlist_with_sep (fun _ -> str ",") autoify l)
 
 let pp_apply st _ = function
   | [] -> st
@@ -176,9 +177,9 @@ and pp_template_parameter_list env (ids,p,t) =
 and pp_template_typecase matched_expr env pv =
   let pattern = (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
       let type_specialization = mt () in
-(*        if List.is_empty types then mt () else arrow (prlist_strict (fun s -> s) types) in **)
-        let pattern_matching_decl = str "[&]" ++ paren (cons ++ type_specialization)
-      in pattern_matching_decl ++ brace (str "return " ++ s2 ++ semicolon ())) in
+        let pattern_matching_decl = str "[&]" ++ paren (cons ++ str " v") and
+        variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "auto " ++ s ++ str " = *v.value") types)
+      in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())) in
   let overload_call = str "overload" ++ paren (prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv) in
     str "return std::visit" ++ paren (overload_call ++ str "," ++ matched_expr) ++ semicolon ()
 
@@ -249,34 +250,12 @@ let pp_newtype ip pl cv =
     in let subtype_name = Array.mapi pp_ctor cv in
       let forward_declaration = str "struct " ++ main_type_name ++ semicolon ()
       and constructor_declarations = prvect_with_sep fnl snd subtype_name
-      and actual_decl = str "struct " ++ pp_global Type (IndRef ip) ++ (brace (str "std::variant" ++ arrow (prvect_with_sep (fun _ -> str ",") fst subtype_name) ++ str " value;"))
+      and actual_decl = str "struct " ++ pp_global Type (IndRef ip) ++ (brace (str "std::variant" ++ arrow (prvect_with_sep (fun _ -> str ",") fst subtype_name) ++ str " value;")) ++ semicolon ()
       in
         forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++  actual_decl ++ fnl()
 
 
-(**[
-    ("what", json_str "decl:ind");
-    ("name", json_global Type (IndRef ip));
-    ("argnames", json_list (List.map json_id pl));
-    ("constructors", json_listarr (Array.mapi (fun idx c -> json_dict [
-        ("name", json_global Cons (ConstructRef (ip, idx+1)));
-        ("argtypes", json_list (List.map (json_type pl) c))
-      ]) cv))
-  ]*)
-
-
 (*s Pretty-printing of a declaration. *)
-
-(** template<class... Ts> struct overload : Ts... { using Ts::operator()...; };
-template<class... Ts> overload(Ts...) -> overload<Ts...>;
-
-std::variant<int, float> intFloat { 0.0f };
-std::visit(overload(
-    [](const int& i) { ... },
-    [](const float& f) { ... },
-  ),
-  intFloat;
-); *)
 
 let pp_decl = function
   | Dind (kn, defs) -> prvecti_with_sep spc
@@ -303,9 +282,9 @@ let pp_decl = function
   | Dterm (r, a, _) ->
     if is_inline_custom r then mt ()
     else
-      hov 2 (paren (str "define " ++ pp_global Term r ++ spc () ++
+      hov 2 (str "const auto& " ++ pp_global Term r ++ spc () ++ str " = " ++
                     (if is_custom r then str (find_custom r)
-                     else pp_expr (empty_env ()) [] a)))
+                     else pp_expr (empty_env ()) [] a) ++ semicolon ())
       ++ fnl2 ()
 
 let rec pp_structure_elem = function
