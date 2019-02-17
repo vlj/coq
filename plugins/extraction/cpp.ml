@@ -38,7 +38,25 @@ let preamble _ comment _ usf =
   str "#include <variant>" ++ fnl () ++
   str "#include <memory>" ++ fnl () ++
   str "template<class... Ts> struct overload : Ts... { using Ts::operator()...; };" ++ fnl () ++
-  str "template<class... Ts> overload(Ts...) -> overload<Ts...>;" ++ fnl ()
+  str "template<class... Ts> overload(Ts...) -> overload<Ts...>;" ++ fnl () ++
+  str "
+template <class F>
+struct y_combinator {
+    F f; // the lambda will be stored here
+
+    // a forwarding operator():
+    template <class... Args>
+    decltype(auto) operator()(Args&&... args) {
+        // we pass ourselves to f, then the arguments.
+        // the lambda should take the first argument as `auto&& recurse` or similar.
+        return f(*this, std::forward<Args>(args)...);
+    }
+};
+// helper function that deduces the type of the lambda:
+template <class F>
+y_combinator<std::decay_t<F>> make_y_combinator(F&& f) {
+    return {std::forward<F>(f)};
+}" ++ fnl ()
 
 let pr_id id =
   str @@ String.map (fun c -> if c == '\'' then '~' else c) (Id.to_string id)
@@ -53,7 +71,7 @@ let pp_lambda_decl st =
   let lambda_signature =
     function parameters ->
         hov 2 (str "[]" ++ (paren parameters) ++
-        (brace (fnl () ++ st ++ fnl())) ++ str ";" ++ fnl ()) in
+        (brace (fnl () ++ st ++ fnl())) ++ fnl ()) in
  function
   | [] -> assert false
   | [id] -> lambda_signature (pr_id id)
@@ -162,7 +180,7 @@ and pp_template_typecase matched_expr env pv =
         let pattern_matching_decl = str "[&]" ++ paren (cons ++ type_specialization)
       in pattern_matching_decl ++ brace (str "return " ++ s2 ++ semicolon ())) in
   let overload_call = str "overload" ++ paren (prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv) in
-    str "std::visit" ++ paren (overload_call ++ str "," ++ matched_expr) ++ semicolon ()
+    str "return std::visit" ++ paren (overload_call ++ str "," ++ matched_expr) ++ semicolon ()
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
@@ -231,10 +249,9 @@ let pp_newtype ip pl cv =
     in let subtype_name = Array.mapi pp_ctor cv in
       let forward_declaration = str "struct " ++ main_type_name ++ semicolon ()
       and constructor_declarations = prvect_with_sep fnl snd subtype_name
-      and variant_decl = str "using " ++ pp_global Type (IndRef ip) ++ str " = std::variant" ++ arrow (prvect_with_sep (fun _ -> str ",") fst subtype_name) ++ str ";"
-      and actual_decl = str "struct " ++ pp_global Type (IndRef ip) ++ (brace (main_type_name ++ str " value;"))
+      and actual_decl = str "struct " ++ pp_global Type (IndRef ip) ++ (brace (str "std::variant" ++ arrow (prvect_with_sep (fun _ -> str ",") fst subtype_name) ++ str " value;"))
       in
-        forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++  variant_decl ++ fnl() ++ actual_decl ++ fnl()
+        forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++  actual_decl ++ fnl()
 
 
 (**[
@@ -278,12 +295,10 @@ let pp_decl = function
          in
          if void then mt ()
          else
-          let fixpoint_version = str "const auto " ++ names.(i) ++ str "W" ++ str " = " ++
+          let fixpoint_version = str "const auto " ++ names.(i) ++ str " = make_y_combinator" ++ paren
                      (if is_custom r then str (find_custom r)
                       else pp_expr (empty_env ()) [] defs.(i)) in
-           hov 2
-             (fixpoint_version
-              ++ fnl () ++ str "const auto " ++ names.(i) ++ str " = " ++ names.(i) ++ str "W" ++ paren (names.(i) ++ str "W")) ++ fnl ())
+           hov 2 fixpoint_version ++ semicolon () ++ fnl ())
       rv
   | Dterm (r, a, _) ->
     if is_inline_custom r then mt ()
