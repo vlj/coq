@@ -49,7 +49,7 @@ struct y_combinator {
     decltype(auto) operator()(Args&&... args) {
         // we pass ourselves to f, then the arguments.
         // the lambda should take the first argument as `auto&& recurse` or similar.
-        return f(*this, std::forward<Args>(args)...);
+        return f(*this)(std::forward<Args>(args)...);
     }
 };
 // helper function that deduces the type of the lambda:
@@ -70,7 +70,7 @@ let semicolon = fun () -> str ";"
 let pp_lambda_decl st =
   let lambda_signature =
     function parameters ->
-        hov 2 (str "[]" ++ (paren parameters) ++
+        hov 2 (str "[&]" ++ (paren parameters) ++
         (brace (fnl () ++ st ++ fnl())) ++ fnl ()) and
   autoify = (fun s -> str "auto " ++ pr_id s)  in
  function
@@ -244,7 +244,7 @@ let pp_newtype ip pl cv =
           then
             mt ()
           else
-            let tmp = fun s -> s |> type_alias |> (fun s -> str "std::unique_ptr" ++ arrow s ++ str " value" ++ semicolon()) in
+            let tmp = fun s -> s |> type_alias |> (fun s -> str "std::shared_ptr" ++ arrow s ++ str " value" ++ semicolon()) in
               prlist_with_sep fnl tmp ctor
       in generic_name, str "struct " ++ generic_name ++ brace members ++ semicolon ()
     in let subtype_name = Array.mapi pp_ctor cv in
@@ -274,9 +274,11 @@ let pp_decl = function
          in
          if void then mt ()
          else
-          let fixpoint_version = str "const auto " ++ names.(i) ++ str " = make_y_combinator" ++ paren
-                     (if is_custom r then str (find_custom r)
+          let lambda_definition = (if is_custom r then str (find_custom r)
                       else pp_expr (empty_env ()) [] defs.(i)) in
+          let to_be_combined = str "[](auto "  ++ names.(i) ++ str ")" ++ brace  (str "return " ++ lambda_definition ++ semicolon ()) in
+          let fixpoint_version = str "const auto " ++ names.(i) ++ str " = make_y_combinator" ++ paren to_be_combined
+                      in
            hov 2 fixpoint_version ++ semicolon () ++ fnl ())
       rv
   | Dterm (r, a, _) ->
