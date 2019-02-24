@@ -178,7 +178,7 @@ and pp_template_typecase matched_expr env pv =
   let pattern = (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
       let type_specialization = mt () in
         let pattern_matching_decl = str "[&]" ++ paren (cons ++ str " v") and
-        variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "auto " ++ s ++ str " = *v.value") types)
+        variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
       in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())) in
   let overload_call = str "overload" ++ paren (prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv) in
     str "return std::visit" ++ paren (overload_call ++ str "," ++ matched_expr) ++ semicolon ()
