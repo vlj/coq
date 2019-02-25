@@ -38,8 +38,10 @@ let preamble _ comment _ usf =
   str "#include <variant>" ++ fnl () ++
   str "#include <memory>" ++ fnl () ++
   str "#include <functional>" ++ fnl () ++
-  str "template<class... Ts> struct overload : Ts... { using Ts::operator()...; };" ++ fnl () ++
-  str "template<class... Ts> overload(Ts...) -> overload<Ts...>;" ++ fnl () ++
+  str "template<class... Ts> struct overload : Ts... {" ++ fnl() ++
+  str "    overload(const Ts&... ts) : Ts(ts)... {}" ++ fnl () ++
+  str "    using Ts::operator()...;" ++ fnl () ++
+  str "};" ++ fnl () ++
   str "
 template <class F>
 struct y_combinator {
@@ -66,6 +68,7 @@ let paren = pp_par true
 let brace = fun s -> str "{" ++ s ++ str "}"
 let arrow = fun s -> str "<" ++ s ++ str ">"
 
+let colon = fun () -> str ","
 let semicolon = fun () -> str ";"
 
 let pp_lambda_decl st =
@@ -183,7 +186,7 @@ and pp_template_typecase matched_expr env pv =
       in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())) in
   let overload_call = str "overload" ++ paren (prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv) in
     str "const auto vis = " ++ overload_call ++ semicolon () ++ fnl () ++
-    str "return std::visit" ++ paren (str "vis" ++ str "," ++ matched_expr) ++ semicolon ()
+    str "return std::visit" ++ paren (str "vis" ++ str "," ++ matched_expr ++ str ".value") ++ semicolon ()
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
@@ -230,7 +233,11 @@ let rec json_type vl = function
   | Tmeta _ | Tvar' _ -> assert false
   | Tvar i -> str "tvar "
   | Tglob (r, l) -> pp_global Type r
-  | Tarr (t1,t2) -> str "std::function" ++ arrow( type_alias t2 ++ paren (type_alias t1)) ++ spc ()
+  | Tarr (t1,t2) ->
+    let rec collect_arrow lst = function
+    | Tarr (t1, t2) -> collect_arrow ( t1 :: lst) t2
+    | x -> x::lst in
+      str "std::function" ++ arrow (type_alias t1 ++ paren (collect_arrow [] t2 |> prlist_with_sep colon type_alias )) ++ spc ()
   | Tdummy _ -> str "tdummy "
   | Tunknown -> str "tunknow "
   | Taxiom -> str "taxiom "
@@ -278,7 +285,8 @@ let pp_decl = function
          else
           let lambda_definition = (if is_custom r then str (find_custom r)
                       else pp_expr (empty_env ()) [] defs.(i)) in
-          let to_be_combined = str "[](" ++ (type_alias typs.(i))  ++ names.(i) ++ str ")" ++ brace  (str "return " ++ lambda_definition ++ semicolon ()) in
+          let to_be_combined = str "[]" ++ paren ( str" auto " ++ names.(i) ) ++ str " -> " ++ type_alias typs.(i) ++
+           brace  (str "return " ++ lambda_definition ++ semicolon ()) in
           let fixpoint_version = str "const auto " ++ names.(i) ++ str " = make_y_combinator" ++ paren to_be_combined
                       in
            hov 2 fixpoint_version ++ semicolon () ++ fnl ())
