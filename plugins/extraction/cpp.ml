@@ -37,6 +37,7 @@ let preamble _ comment _ usf =
   pp_header_comment comment ++
   str "#include <variant>" ++ fnl () ++
   str "#include <memory>" ++ fnl () ++
+  str "#include <functional>" ++ fnl () ++
   str "template<class... Ts> struct overload : Ts... { using Ts::operator()...; };" ++ fnl () ++
   str "template<class... Ts> overload(Ts...) -> overload<Ts...>;" ++ fnl () ++
   str "
@@ -227,12 +228,12 @@ let rec json_type vl = function
 
  let rec type_alias = function
   | Tmeta _ | Tvar' _ -> assert false
-  | Tvar i -> str "tvar"
+  | Tvar i -> str "tvar "
   | Tglob (r, l) -> pp_global Type r
-  | Tarr (t1,t2) -> str "tarr"
-  | Tdummy _ -> str "tdummy"
-  | Tunknown -> str "tunknow"
-  | Taxiom -> str "taxiom"
+  | Tarr (t1,t2) -> str "std::function" ++ arrow( type_alias t2 ++ paren (type_alias t1)) ++ spc ()
+  | Tdummy _ -> str "tdummy "
+  | Tunknown -> str "tunknow "
+  | Taxiom -> str "taxiom "
 
 
 (** Declare a new algebraic type *)
@@ -263,7 +264,7 @@ let pp_decl = function
       (fun i p -> if p.ip_logical then str ""
      else pp_newtype (kn, i) p.ip_vars p.ip_types) defs.ind_packets
   | Dtype _ -> mt ()
-  | Dfix (rv, defs,_) ->
+  | Dfix (rv, defs, typs) ->
     let names = Array.map
         (fun r -> if is_inline_custom r then mt () else pp_global Term r) rv
     in
@@ -277,7 +278,7 @@ let pp_decl = function
          else
           let lambda_definition = (if is_custom r then str (find_custom r)
                       else pp_expr (empty_env ()) [] defs.(i)) in
-          let to_be_combined = str "[](auto "  ++ names.(i) ++ str ")" ++ brace  (str "return " ++ lambda_definition ++ semicolon ()) in
+          let to_be_combined = str "[](" ++ (type_alias typs.(i))  ++ names.(i) ++ str ")" ++ brace  (str "return " ++ lambda_definition ++ semicolon ()) in
           let fixpoint_version = str "const auto " ++ names.(i) ++ str " = make_y_combinator" ++ paren to_be_combined
                       in
            hov 2 fixpoint_version ++ semicolon () ++ fnl ())
