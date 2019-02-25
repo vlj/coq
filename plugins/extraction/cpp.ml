@@ -46,7 +46,7 @@ struct y_combinator {
 
     // a forwarding operator():
     template <class... Args>
-    decltype(auto) operator()(Args&&... args) {
+    decltype(auto) operator()(Args&&... args) const {
         // we pass ourselves to f, then the arguments.
         // the lambda should take the first argument as `auto&& recurse` or similar.
         return f(*this)(std::forward<Args>(args)...);
@@ -181,7 +181,8 @@ and pp_template_typecase matched_expr env pv =
         variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
       in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())) in
   let overload_call = str "overload" ++ paren (prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv) in
-    str "return std::visit" ++ paren (overload_call ++ str "," ++ matched_expr) ++ semicolon ()
+    str "const auto vis = " ++ overload_call ++ semicolon () ++ fnl () ++
+    str "return std::visit" ++ paren (str "vis" ++ str "," ++ matched_expr) ++ semicolon ()
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
