@@ -71,6 +71,10 @@ let arrow = fun s -> str "<" ++ s ++ str ">"
 let colon = fun () -> str ","
 let semicolon = fun () -> str ";"
 
+
+let mt_if_empty englobing_code_function = fun lst ->
+  if List.is_empty lst then mt () else englobing_code_function lst
+
 let pp_lambda_decl st =
   let lambda_signature =
     function parameters ->
@@ -123,8 +127,8 @@ let rec pp_expr env args =
   | MLcons (_,r,args') ->
     assert (List.is_empty args);
     let st =
-      pp_global Cons r ++ brace (
-             prlist_with_sep spc (pp_cons_args env) args')
+      let arglst = mt_if_empty (fun lst ->  str "std::make_shared<>" ++ paren(prlist_with_sep spc (pp_cons_args env) lst)) args' in
+      pp_global Cons r ++ brace arglst
     in
     if is_coinductive r then paren (str "delay " ++ st) else st
   | MLtuple _ -> user_err Pp.(str "Cannot handle tuples in Scheme yet.")
@@ -162,7 +166,7 @@ let rec pp_expr env args =
 and pp_cons_args env = function
   | MLcons (_,r,args) when is_coinductive r ->
     paren (pp_global Cons r ++
-           (if List.is_empty args then mt () else spc ()) ++
+           (mt_if_empty (fun _ -> spc()) args) ++
            prlist_with_sep spc (pp_cons_args env) args)
   | e -> pp_expr env [] e
 
@@ -202,33 +206,6 @@ and pp_fix env j (ids,bl) args =
            fnl () ++
            hov 2 (pp_apply (pr_id (ids.(j))) true args))))
 
-  (**
-let rec json_type vl = function
-  | Tmeta _ | Tvar' _ -> assert false
-  | Tvar i -> (try
-      let varid = List.nth vl (pred i) in json_dict [
-        ("what", json_str "type:var");
-        ("name", json_id varid)
-      ]
-    with Failure _ -> json_dict [
-        ("what", json_str "type:varidx");
-        ("name", json_int i)
-      ])
-  | Tglob (r, l) -> json_dict [
-      ("what", json_str "type:glob");
-      ("name", json_global Type r);
-      ("args", json_list (List.map (json_type vl) l))
-    ]
-  | Tarr (t1,t2) -> json_dict [
-      ("what", json_str "type:arrow");
-      ("left", json_type vl t1);
-      ("right", json_type vl t2)
-    ]
-  | Tdummy _ -> json_dict [("what", json_str "type:dummy")]
-  | Tunknown -> json_dict [("what", json_str "type:unknown")]
-  | Taxiom -> json_dict [("what", json_str "type:axiom")]
- *)
-
  let rec type_alias = function
   | Tmeta _ | Tvar' _ -> assert false
   | Tvar i -> str "tvar "
@@ -248,13 +225,7 @@ let pp_newtype ip pl cv =
   let main_type_name = pp_global Type (IndRef ip) in
     let pp_ctor = fun idx ctor ->
       let generic_name = pp_global Cons (ConstructRef (ip, idx + 1))
-      and members =
-        if List.is_empty ctor
-          then
-            mt ()
-          else
-            let tmp = fun s -> s |> type_alias |> (fun s -> str "std::shared_ptr" ++ arrow s ++ str " value" ++ semicolon()) in
-              prlist_with_sep fnl tmp ctor
+      and members = prlist_with_sep fnl (fun s -> str "std::shared_ptr" ++ arrow (type_alias s) ++ str " value" ++ semicolon()) ctor
       in generic_name, str "struct " ++ generic_name ++ brace members ++ semicolon ()
     in let subtype_name = Array.mapi pp_ctor cv in
       let forward_declaration = str "struct " ++ main_type_name ++ semicolon ()
