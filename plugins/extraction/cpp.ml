@@ -79,13 +79,13 @@ let mt_if_empty englobing_code_function = fun lst ->
 let pp_lambda_decl st =
   let lambda_signature =
     function parameters ->
-      str "[&]" ++ (paren parameters) ++
-      ((fnl () ++ st |> v 1) ++ fnl() |> brace) and
+      str "[&]" ++ (paren parameters) and
+  lambda_body = ((fnl () ++ str "return " ++ st ++ semicolon () |> v 1) ++ fnl() |> brace) and
   autoify = (fun s -> str "auto " ++ pr_id s)  in
   function
   | [] -> assert false
-  | [id] -> lambda_signature (autoify id)
-  | l -> lambda_signature (prlist_with_sep colon autoify l)
+  | [id] -> lambda_signature (autoify id) ++ lambda_body
+  | l -> lambda_signature (prlist_with_sep colon autoify l) ++ lambda_body
 
 let pp_apply st _ = function
   | [] -> st
@@ -205,9 +205,7 @@ and pp_template_typecase matched_expr env pv =
       fnl () ++
       prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv |> v 0 |> paren
 
-    ) in
-  str "const auto vis = " ++ overload_call ++ semicolon () ++ fnl () ++
-  str "return std::visit" ++ paren (str "vis" ++ str "," ++ matched_expr ++ str ".value") ++ semicolon ()
+    ) in str "std::visit" ++ paren (overload_call ++ str "," ++ matched_expr ++ str ".value")
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
