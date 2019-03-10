@@ -84,7 +84,7 @@ let pp_lambda_decl st =
  function
   | [] -> assert false
   | [id] -> lambda_signature (autoify id)
-  | l -> lambda_signature (prlist_with_sep (fun _ -> str ",") autoify l)
+  | l -> lambda_signature (prlist_with_sep colon autoify l)
 
 let pp_apply st _ = function
   | [] -> st
@@ -127,8 +127,7 @@ let rec pp_expr env args =
   | MLcons (_,r,args') ->
     assert (List.is_empty args);
     let st =
-      let arglst = mt_if_empty (fun lst ->  str "std::make_shared<>" ++ paren(prlist_with_sep spc (pp_cons_args env) lst)) args' in
-      pp_global Cons r ++ brace arglst
+      pp_global Cons r ++ str "_ctor" ++  (prlist_with_sep colon (pp_cons_args env) args' |> paren)
     in
     if is_coinductive r then paren (str "delay " ++ st) else st
   | MLtuple _ -> user_err Pp.(str "Cannot handle tuples in Scheme yet.")
@@ -219,20 +218,37 @@ and pp_fix env j (ids,bl) args =
   | Tunknown -> str "tunknow "
   | Taxiom -> str "taxiom "
 
+let declare_constructor = fun (ctor_name, ctor_args) ->
+  str "struct " ++ ctor_name ++
+  brace (prlist_with_sep fnl (fun s -> str "std::shared_ptr" ++ arrow (type_alias s) ++ str " value" ++ semicolon()) ctor_args) ++
+  semicolon ()
+
+let declare_constructor_function type_name = fun (ctor_name, ctor_args) ->
+  type_name ++ str " " ++ ctor_name ++ str "_ctor" ++ (
+    prlist_with_sep colon type_alias ctor_args |> paren
+  )
+  ++ semicolon ()
+
+let define_variant = fun type_name ctors ->
+  str "struct " ++ type_name ++
+  (
+    str "std::variant" ++ (
+      prvect_with_sep colon (fun x -> x) ctors |> arrow
+    ) ++ str " value" ++ semicolon () |> brace
+  ) ++ semicolon ()
 
 (** Declare a new algebraic type *)
 let pp_newtype ip pl cv =
-  let main_type_name = pp_global Type (IndRef ip) in
-    let pp_ctor = fun idx ctor ->
-      let generic_name = pp_global Cons (ConstructRef (ip, idx + 1))
-      and members = prlist_with_sep fnl (fun s -> str "std::shared_ptr" ++ arrow (type_alias s) ++ str " value" ++ semicolon()) ctor
-      in generic_name, str "struct " ++ generic_name ++ brace members ++ semicolon ()
-    in let subtype_name = Array.mapi pp_ctor cv in
-      let forward_declaration = str "struct " ++ main_type_name ++ semicolon ()
-      and constructor_declarations = prvect_with_sep fnl snd subtype_name
-      and actual_decl = str "struct " ++ pp_global Type (IndRef ip) ++ (brace (str "std::variant" ++ arrow (prvect_with_sep (fun _ -> str ",") fst subtype_name) ++ str " value;")) ++ semicolon ()
+  let
+    type_name = pp_global Type (IndRef ip) and
+    constructors_with_args_array = Array.mapi (fun idx ctor -> pp_global Cons (ConstructRef (ip, idx + 1)), ctor) cv
+    in
+      let forward_declaration = str "struct " ++ type_name ++ semicolon ()
+      and constructor_declarations = prvect_with_sep fnl declare_constructor constructors_with_args_array
+      and variant_definition = define_variant type_name (Array.map fst constructors_with_args_array)
+      and constructors_function = prvect_with_sep fnl (declare_constructor_function type_name) constructors_with_args_array
       in
-        forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++  actual_decl ++ fnl()
+        forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++ variant_definition ++  fnl() ++ constructors_function ++ fnl ()
 
 
 (*s Pretty-printing of a declaration. *)
