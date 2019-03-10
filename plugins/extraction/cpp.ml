@@ -38,6 +38,7 @@ let preamble _ comment _ usf =
   str "#include <variant>" ++ fnl () ++
   str "#include <memory>" ++ fnl () ++
   str "#include <functional>" ++ fnl () ++
+  str "#include <any>" ++ fnl () ++
   str "template<class... Ts> struct overload : Ts... {" ++ fnl() ++
   str "    overload(const Ts&... ts) : Ts(ts)... {}" ++ fnl () ++
   str "    using Ts::operator()...;" ++ fnl () ++
@@ -96,6 +97,19 @@ let pp_apply st _ = function
 
 let pp_global k r = str (Common.pp_global k r)
 
+let rec type_alias = function
+  | Tmeta _ | Tvar' _ -> assert false
+  | Tvar i -> str "tvar "
+  | Tglob (r, l) -> pp_global Type r
+  | Tarr (t1,t2) ->
+    let rec collect_arrow lst = function
+      | Tarr (t1, t2) -> collect_arrow ( t2 :: lst) t1
+      | x -> List.rev (x::lst) in
+    str "std::function" ++ arrow (type_alias t2 ++ paren ([t1] |> prlist_with_sep colon type_alias )) ++ str " "
+  | Tdummy _ -> str "tdummy "
+  | Tunknown -> str "std::any"
+  | Taxiom -> str "taxiom "
+
 (*s Pretty-printing of expressions.  *)
 
 let rec pp_expr env args =
@@ -146,7 +160,7 @@ let rec pp_expr env args =
              ++ pp_expr env [] t)))
   | MLcase (typ,t, pv) ->
     let matched_expr =
-      if not (is_coinductive_type typ) then pp_expr env [] t
+      if not (is_coinductive_type typ) then pp_expr env [] t |> fun s -> str "static_cast" ++ (type_alias typ |> arrow) ++ (s |> paren)
       else paren (str "force" ++ spc () ++ pp_expr env [] t)
     in
     apply (pp_template_typecase matched_expr env pv)
@@ -209,19 +223,6 @@ and pp_fix env j (ids,bl) args =
            fnl () ++
            hov 2 (pp_apply (pr_id (ids.(j))) true args))))
 
-let rec type_alias = function
-  | Tmeta _ | Tvar' _ -> assert false
-  | Tvar i -> str "tvar "
-  | Tglob (r, l) -> pp_global Type r
-  | Tarr (t1,t2) ->
-    let rec collect_arrow lst = function
-      | Tarr (t1, t2) -> collect_arrow ( t1 :: lst) t2
-      | x -> x::lst in
-    str "std::function" ++ arrow (type_alias t1 ++ paren (collect_arrow [] t2 |> prlist_with_sep colon type_alias )) ++ spc ()
-  | Tdummy _ -> str "tdummy "
-  | Tunknown -> str "tunknow "
-  | Taxiom -> str "taxiom "
-
 let declare_constructor = fun (ctor_name, ctor_args) ->
   str "struct " ++ ctor_name ++
   brace (prlist_with_sep fnl (fun s -> str "std::shared_ptr" ++ arrow (type_alias s) ++ str " value" ++ semicolon()) ctor_args) ++
@@ -275,19 +276,16 @@ let define_fixpoint = fun ref def typ ->
     in
     fixpoint_version ++ semicolon () ++ fnl ()
 
+let define_type = fun ref def typ ->
+  assert (List.is_empty def);
+  str "using " ++ pp_global Type ref ++ str " = " ++ type_alias typ ++ semicolon ()
+
 let pp_decl = function
   | Dind (kn, defs) -> prvecti_with_sep spc
                          (fun i p -> if p.ip_logical then str ""
                            else pp_newtype (kn, i) p.ip_vars p.ip_types) defs.ind_packets
-  | Dtype _ -> mt ()
-  | Dfix (rv, defs, typs) ->
-    let names = Array.map
-        (fun r -> if is_inline_custom r then mt () else pp_global Term r) rv
-    in
-    prvecti
-      (fun i r -> define_fixpoint r defs.(i) typs.(i)
-      )
-      rv
+  | Dtype (rv, defs, typs) -> define_type rv defs typs ++ fnl ()
+  | Dfix (rv, defs, typs) -> prvecti (fun i r -> define_fixpoint r defs.(i) typs.(i)) rv
   | Dterm (r, a, _) ->
     if is_inline_custom r then mt ()
     else
