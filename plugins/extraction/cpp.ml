@@ -78,10 +78,10 @@ let mt_if_empty englobing_code_function = fun lst ->
 let pp_lambda_decl st =
   let lambda_signature =
     function parameters ->
-        str "[&]" ++ (paren parameters) ++
-        ((fnl () ++ st |> v 1) ++ fnl() |> brace) and
+      str "[&]" ++ (paren parameters) ++
+      ((fnl () ++ st |> v 1) ++ fnl() |> brace) and
   autoify = (fun s -> str "auto " ++ pr_id s)  in
- function
+  function
   | [] -> assert false
   | [id] -> lambda_signature (autoify id)
   | l -> lambda_signature (prlist_with_sep colon autoify l)
@@ -90,7 +90,7 @@ let pp_apply st _ = function
   | [] -> st
   | [a] -> paren (st ++ spc () ++ a)
   | args -> st ++ paren (
-                          (prlist_with_sep (fun x -> str ",") (fun x -> x ) args))
+      (prlist_with_sep (fun x -> str ",") (fun x -> x ) args))
 
 (*s The pretty-printer for Scheme syntax *)
 
@@ -183,17 +183,17 @@ and pp_template_parameter_list env (ids,p,t) =
 
 and pp_template_typecase matched_expr env pv =
   let pattern = (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
-      let type_specialization = mt () in
-        let pattern_matching_decl = str "[&]" ++ paren (cons ++ str " v") and
-        variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
-      in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())) in
+                  let type_specialization = mt () in
+                  let pattern_matching_decl = str "[&]" ++ paren (cons ++ str " v") and
+                    variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
+                  in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())) in
   let overload_call = str "overload" ++ (
-    fnl () ++
-    prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv |> v 0 |> paren
+      fnl () ++
+      prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv |> v 0 |> paren
 
     ) in
-    str "const auto vis = " ++ overload_call ++ semicolon () ++ fnl () ++
-    str "return std::visit" ++ paren (str "vis" ++ str "," ++ matched_expr ++ str ".value") ++ semicolon ()
+  str "const auto vis = " ++ overload_call ++ semicolon () ++ fnl () ++
+  str "return std::visit" ++ paren (str "vis" ++ str "," ++ matched_expr ++ str ".value") ++ semicolon ()
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
@@ -209,15 +209,15 @@ and pp_fix env j (ids,bl) args =
            fnl () ++
            hov 2 (pp_apply (pr_id (ids.(j))) true args))))
 
- let rec type_alias = function
+let rec type_alias = function
   | Tmeta _ | Tvar' _ -> assert false
   | Tvar i -> str "tvar "
   | Tglob (r, l) -> pp_global Type r
   | Tarr (t1,t2) ->
     let rec collect_arrow lst = function
-    | Tarr (t1, t2) -> collect_arrow ( t1 :: lst) t2
-    | x -> x::lst in
-      str "std::function" ++ arrow (type_alias t1 ++ paren (collect_arrow [] t2 |> prlist_with_sep colon type_alias )) ++ spc ()
+      | Tarr (t1, t2) -> collect_arrow ( t1 :: lst) t2
+      | x -> x::lst in
+    str "std::function" ++ arrow (type_alias t1 ++ paren (collect_arrow [] t2 |> prlist_with_sep colon type_alias )) ++ spc ()
   | Tdummy _ -> str "tdummy "
   | Tunknown -> str "tunknow "
   | Taxiom -> str "taxiom "
@@ -245,51 +245,55 @@ let define_variant = fun type_name ctors ->
 let pp_newtype ip pl cv =
   let
     type_name = pp_global Type (IndRef ip) and
-    constructors_with_args_array = Array.mapi (fun idx ctor -> pp_global Cons (ConstructRef (ip, idx + 1)), ctor) cv
-    in
-      let forward_declaration = str "struct " ++ type_name ++ semicolon ()
-      and constructor_declarations = prvect_with_sep fnl declare_constructor constructors_with_args_array
-      and variant_definition = define_variant type_name (Array.map fst constructors_with_args_array)
-      and constructors_function = prvect_with_sep fnl (declare_constructor_function type_name) constructors_with_args_array
-      in
-        forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++ variant_definition ++  fnl() ++ constructors_function ++ fnl ()
+  constructors_with_args_array = Array.mapi (fun idx ctor -> pp_global Cons (ConstructRef (ip, idx + 1)), ctor) cv
+  in
+  let forward_declaration = str "struct " ++ type_name ++ semicolon ()
+  and constructor_declarations = prvect_with_sep fnl declare_constructor constructors_with_args_array
+  and variant_definition = define_variant type_name (Array.map fst constructors_with_args_array)
+  and constructors_function = prvect_with_sep fnl (declare_constructor_function type_name) constructors_with_args_array
+  in
+  forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++ variant_definition ++  fnl() ++ constructors_function ++ fnl ()
 
 
 (*s Pretty-printing of a declaration. *)
 
+let define_fixpoint = fun ref def typ ->
+  let name = pp_global Term ref and
+  void = is_inline_custom ref ||
+         (not (is_custom ref) &&
+          match def with MLexn "UNUSED" -> true | _ -> false)
+  in
+  if void then mt ()
+  else
+    let lambda_definition = (if is_custom ref then str (find_custom ref)
+                             else pp_expr (empty_env ()) [] def) in
+    let to_be_combined =
+      str "[]" ++ paren ( str" auto " ++ name ) ++ str " -> " ++ type_alias typ ++
+      (fnl () ++ str "return " ++ lambda_definition ++ semicolon () |> v 1 |> brace)
+    in
+    let fixpoint_version = str "const auto " ++ name ++ str " = make_y_combinator" ++ paren to_be_combined
+    in
+    fixpoint_version ++ semicolon () ++ fnl ()
+
 let pp_decl = function
   | Dind (kn, defs) -> prvecti_with_sep spc
-      (fun i p -> if p.ip_logical then str ""
-     else pp_newtype (kn, i) p.ip_vars p.ip_types) defs.ind_packets
+                         (fun i p -> if p.ip_logical then str ""
+                           else pp_newtype (kn, i) p.ip_vars p.ip_types) defs.ind_packets
   | Dtype _ -> mt ()
   | Dfix (rv, defs, typs) ->
     let names = Array.map
         (fun r -> if is_inline_custom r then mt () else pp_global Term r) rv
     in
     prvecti
-      (fun i r ->
-         let void = is_inline_custom r ||
-                    (not (is_custom r) &&
-                     match defs.(i) with MLexn "UNUSED" -> true | _ -> false)
-         in
-         if void then mt ()
-         else
-          let lambda_definition = (if is_custom r then str (find_custom r)
-                      else pp_expr (empty_env ()) [] defs.(i)) in
-            let to_be_combined =
-              str "[]" ++ paren ( str" auto " ++ names.(i) ) ++ str " -> " ++ type_alias typs.(i) ++
-              (fnl () ++ str "return " ++ lambda_definition ++ semicolon () |> v 1 |> brace)
-            in
-              let fixpoint_version = str "const auto " ++ names.(i) ++ str " = make_y_combinator" ++ paren to_be_combined
-              in
-                fixpoint_version ++ semicolon () ++ fnl ())
+      (fun i r -> define_fixpoint r defs.(i) typs.(i)
+      )
       rv
   | Dterm (r, a, _) ->
     if is_inline_custom r then mt ()
     else
       str "const auto& " ++ pp_global Term r ++ str " = " ++
-                    (if is_custom r then str (find_custom r)
-                     else pp_expr (empty_env ()) [] a) ++ semicolon ()
+      (if is_custom r then str (find_custom r)
+       else pp_expr (empty_env ()) [] a) ++ semicolon ()
       ++ fnl2 ()
 
 let rec pp_structure_elem = function
