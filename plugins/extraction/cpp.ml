@@ -78,8 +78,8 @@ let mt_if_empty englobing_code_function = fun lst ->
 let pp_lambda_decl st =
   let lambda_signature =
     function parameters ->
-        hov 2 (str "[&]" ++ (paren parameters) ++
-        (brace (fnl () ++ st ++ fnl())) ++ fnl ()) and
+        str "[&]" ++ (paren parameters) ++
+        ((fnl () ++ st |> v 1) ++ fnl() |> brace) and
   autoify = (fun s -> str "auto " ++ pr_id s)  in
  function
   | [] -> assert false
@@ -88,7 +88,7 @@ let pp_lambda_decl st =
 
 let pp_apply st _ = function
   | [] -> st
-  | [a] -> hov 2 (paren (st ++ spc () ++ a))
+  | [a] -> paren (st ++ spc () ++ a)
   | args -> st ++ paren (
                           (prlist_with_sep (fun x -> str ",") (fun x -> x ) args))
 
@@ -149,7 +149,7 @@ let rec pp_expr env args =
       if not (is_coinductive_type typ) then pp_expr env [] t
       else paren (str "force" ++ spc () ++ pp_expr env [] t)
     in
-    apply (v 3 (pp_template_typecase matched_expr env pv))
+    apply (pp_template_typecase matched_expr env pv)
   | MLfix (i,ids,defs) ->
     let ids',env' = push_vars (List.rev (Array.to_list ids)) env in
     pp_fix env' i (Array.of_list (List.rev ids'),defs) args
@@ -187,7 +187,11 @@ and pp_template_typecase matched_expr env pv =
         let pattern_matching_decl = str "[&]" ++ paren (cons ++ str " v") and
         variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
       in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())) in
-  let overload_call = str "overload" ++ paren (prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv) in
+  let overload_call = str "overload" ++ (
+    fnl () ++
+    prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv |> v 0 |> paren
+
+    ) in
     str "const auto vis = " ++ overload_call ++ semicolon () ++ fnl () ++
     str "return std::visit" ++ paren (str "vis" ++ str "," ++ matched_expr ++ str ".value") ++ semicolon ()
 
@@ -272,18 +276,20 @@ let pp_decl = function
          else
           let lambda_definition = (if is_custom r then str (find_custom r)
                       else pp_expr (empty_env ()) [] defs.(i)) in
-          let to_be_combined = str "[]" ++ paren ( str" auto " ++ names.(i) ) ++ str " -> " ++ type_alias typs.(i) ++
-           brace  (str "return " ++ lambda_definition ++ semicolon ()) in
-          let fixpoint_version = str "const auto " ++ names.(i) ++ str " = make_y_combinator" ++ paren to_be_combined
-                      in
-           hov 2 fixpoint_version ++ semicolon () ++ fnl ())
+            let to_be_combined =
+              str "[]" ++ paren ( str" auto " ++ names.(i) ) ++ str " -> " ++ type_alias typs.(i) ++
+              (fnl () ++ str "return " ++ lambda_definition ++ semicolon () |> v 1 |> brace)
+            in
+              let fixpoint_version = str "const auto " ++ names.(i) ++ str " = make_y_combinator" ++ paren to_be_combined
+              in
+                fixpoint_version ++ semicolon () ++ fnl ())
       rv
   | Dterm (r, a, _) ->
     if is_inline_custom r then mt ()
     else
-      hov 2 (str "const auto& " ++ pp_global Term r ++ spc () ++ str " = " ++
+      str "const auto& " ++ pp_global Term r ++ str " = " ++
                     (if is_custom r then str (find_custom r)
-                     else pp_expr (empty_env ()) [] a) ++ semicolon ())
+                     else pp_expr (empty_env ()) [] a) ++ semicolon ()
       ++ fnl2 ()
 
 let rec pp_structure_elem = function
