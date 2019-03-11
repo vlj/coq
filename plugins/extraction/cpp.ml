@@ -104,7 +104,8 @@ let rec type_alias = function
   | Tarr (t1,t2) as e ->
     let rec collect_arrow lst = function
       | Tarr (t1, t2) -> collect_arrow ( t1 :: lst) t2
-      | x -> let tmp = List.rev (x::lst) in List.hd tmp, List.rev (List.tl tmp) in
+      | x ->  x, lst
+    in
     let out, in_lst = collect_arrow [] e in
     str "std::function" ++ arrow (type_alias out ++ paren (in_lst |> prlist_with_sep colon type_alias )) ++ str " "
   | Tdummy _ -> str "tdummy "
@@ -173,8 +174,8 @@ let rec pp_expr env args =
     paren (str "error" ++ spc () ++ qs s)
   | MLdummy _ ->
     str "__" (* An [MLdummy] may be applied, but I don't really care. *)
-  | MLmagic a ->
-    pp_expr env args a
+  | MLmagic a -> str "std::any" ++ (
+      (pp_expr env args a) |> paren)
   | MLaxiom -> paren (str "error \"AXIOM TO BE REALIZED\"")
 
 and pp_cons_args env = function
