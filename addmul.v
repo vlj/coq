@@ -11,6 +11,10 @@ Definition binopDenote (b : binop) : nat -> nat -> nat :=
   | Times => mult
                end.
 
+Definition three := S (S (S O)).
+Definition nine := S (S (S (S (S (S (S (S (S O)))))))).
+
+Definition tst := binopDenote Times three three.
 
 Extraction Language CPP.
-Recursive Extraction binopDenote.
+Recursive Extraction tst.
