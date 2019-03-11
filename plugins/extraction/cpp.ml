@@ -79,7 +79,7 @@ let mt_if_empty englobing_code_function = fun lst ->
 let pp_lambda_decl st =
   let lambda_signature =
     function parameters ->
-      str "[&]" ++ (paren parameters) and
+      str "[=]" ++ (paren parameters) and
   lambda_body = ((fnl () ++ str "return " ++ st ++ semicolon () |> v 1) ++ fnl() |> brace) and
   autoify = (fun s -> str "auto " ++ pr_id s)  in
   function
@@ -200,7 +200,7 @@ and pp_template_parameter_list env (ids,p,t) =
 and pp_template_typecase matched_expr env pv =
   let pattern = (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
                   let type_specialization = mt () in
-                  let pattern_matching_decl = str "[&]" ++ paren (cons ++ str " v") and
+                  let pattern_matching_decl = str "[=]" ++ paren (cons ++ str " v") and
                     variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
                   in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())) in
   let overload_call = str "overload" ++ (
