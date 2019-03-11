@@ -121,11 +121,12 @@ let rec pp_expr env args =
   | MLapp (f,args') ->
     let stl = List.map (pp_expr env []) args' in
     pp_expr env (stl @ args) f
-  | MLlam _ as a ->
-    let fl,a' = collect_lams a in
-    let fl,env' = push_vars (List.map id_of_mlid fl) env in
-    let listrevfl = List.rev fl in
-    apply (pp_lambda_decl (pp_expr env' [] a') listrevfl)
+  | MLlam (id, body) ->
+    (* let fl,a' = collect_lams a in
+       let fl,env' = push_vars (List.map id_of_mlid fl) env in
+       let listrevfl = List.rev fl in *)
+    let id', env' = push_vars [id_of_mlid id] env in
+    apply (pp_lambda_decl (pp_expr env' [] body) id')
   | MLletin (id,a1,a2) ->
     let i,env' = push_vars [id_of_mlid id] env in
     apply
