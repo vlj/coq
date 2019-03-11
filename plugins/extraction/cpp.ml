@@ -90,8 +90,7 @@ let pp_lambda_decl st =
 let pp_apply st _ = function
   | [] -> st
   | [a] -> paren (st ++ spc () ++ a)
-  | args -> st ++ paren (
-      (prlist_with_sep (fun x -> str ",") (fun x -> x ) args))
+  | args -> st ++ prlist paren args
 
 (*s The pretty-printer for Scheme syntax *)
 
@@ -102,12 +101,12 @@ let rec type_alias = function
   | Tvar i -> str "tvar "
   | Tglob (r, l) -> pp_global Type r
   | Tarr (t1,t2) as e ->
-    let rec collect_arrow lst = function
+    (*let rec collect_arrow lst = function
       | Tarr (t1, t2) -> collect_arrow ( t1 :: lst) t2
       | x ->  x, lst
-    in
-    let out, in_lst = collect_arrow [] e in
-    str "std::function" ++ arrow (type_alias out ++ paren (in_lst |> prlist_with_sep colon type_alias )) ++ str " "
+      in
+      let out, in_lst = collect_arrow [] e in *)
+    str "std::function" ++ arrow (type_alias t2 ++ paren ([t1] |> prlist_with_sep colon type_alias )) ++ str " "
   | Tdummy _ -> str "tdummy "
   | Tunknown -> str "std::any"
   | Taxiom -> str "taxiom "
