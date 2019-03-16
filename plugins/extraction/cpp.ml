@@ -229,10 +229,12 @@ let declare_constructor = fun (ctor_name, ctor_args) ->
   semicolon ()
 
 let declare_constructor_function type_name = fun (ctor_name, ctor_args) ->
-  type_name ++ str " " ++ ctor_name ++ str "_ctor" ++ (
-    prlist_with_sep colon type_alias ctor_args |> paren
-  )
-  ++ semicolon ()
+  let args = List.mapi (fun i n -> (type_alias n, str "a" ++ (str @@ string_of_int i))) ctor_args in
+  let ctor_build = ctor_name ++ (prlist_with_sep colon (fun (tp, name) -> str "std::make_shared" ++ arrow tp ++ paren name) args |> brace) |> brace in
+  let body = str "return " ++ ctor_build ++ semicolon () |> brace
+  in type_name ++ str " " ++ ctor_name ++ str "_ctor" ++ (
+      prlist_with_sep colon (fun (tp, name) -> tp ++ str " " ++ name) args |> paren
+    ) ++ body
 
 let define_variant = fun type_name ctors ->
   str "struct " ++ type_name ++
@@ -272,7 +274,7 @@ let define_fixpoint = fun ref def typ ->
       str "[]" ++ paren ( str" auto " ++ name ) ++ str " -> " ++ type_alias typ ++
       (fnl () ++ str "return " ++ lambda_definition ++ semicolon () |> v 1 |> brace)
     in
-    let fixpoint_version = str "const auto " ++ name ++ str " = make_y_combinator" ++ paren to_be_combined
+    let fixpoint_version = str "const " ++ type_alias typ ++ str " " ++ name ++ str " = make_y_combinator" ++ paren to_be_combined
     in
     fixpoint_version ++ semicolon () ++ fnl ()
 
