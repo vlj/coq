@@ -21,7 +21,6 @@ match n with
 | _ => false
 end.
 
-Definition nine := S (S (S (S (S (S (S (S (S O)))))))).
 Example tmp: is_power_of_three nine = true.
 Proof.
   simpl. trivial.

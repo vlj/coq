@@ -87,10 +87,7 @@ let pp_lambda_decl st =
   | [id] -> lambda_signature (autoify id) ++ lambda_body
   | l -> lambda_signature (prlist_with_sep colon autoify l) ++ lambda_body
 
-let pp_apply st _ = function
-  | [] -> st
-  | [a] -> paren (st ++ spc () ++ a)
-  | args -> st ++ prlist paren args
+let pp_apply st _ = function lst -> st ++ prlist paren lst
 
 (*s The pretty-printer for Scheme syntax *)
 
