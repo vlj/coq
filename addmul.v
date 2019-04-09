@@ -14,7 +14,20 @@ Definition binopDenote (b : binop) : nat -> nat -> nat :=
 Definition three := S (S (S O)).
 Definition nine := S (S (S (S (S (S (S (S (S O)))))))).
 
+Fixpoint is_power_of_three n :=
+match n with
+| O => true
+| S (S (S p)) => is_power_of_three p
+| _ => false
+end.
+
+Definition nine := S (S (S (S (S (S (S (S (S O)))))))).
+Example tmp: is_power_of_three nine = true.
+Proof.
+  simpl. trivial.
+Qed.
+
 Definition tst := binopDenote Times three three.
 
 Extraction Language CPP.
-Recursive Extraction tst.
+Recursive Extraction is_power_of_three.
