@@ -24,7 +24,7 @@ open Common
 let keywords =
   List.fold_right (fun s -> Id.Set.add (Id.of_string s))
     [ "struct"; "class"; "return"; "typedef"; "using";
-      "template"; "namespace";]
+      "template"; "namespace"; "bool"; "int"]
     Id.Set.empty
 
 let pp_comment s = str"// "++h 0 s++fnl ()
@@ -220,7 +220,23 @@ and pp_fix env j (ids,bl) args =
            fnl () ++
            hov 2 (pp_apply (pr_id (ids.(j))) true args))))
 
+
+let rec extract_template_parameter lst = function
+  | Tmeta _ | Tvar' _ -> assert false
+  | Tvar i -> str "tvar " :: lst
+  | Tarr (t1,t2) -> extract_template_parameter (extract_template_parameter lst t1) t2
+  | Tdummy _
+  | Tglob _
+  | Tunknown
+  | Taxiom -> lst
+
+let pp_template_parameters_decl parameter_lists =
+  if List.is_empty parameter_lists then mt () else
+    let lst_par_name = prlist_with_sep colon (fun par_name -> str "typename " ++ par_name) parameter_lists in
+    str "template<" ++ lst_par_name ++ str ">"
+
 let declare_constructor = fun (ctor_name, ctor_args) ->
+  pp_template_parameters_decl (List.fold_left extract_template_parameter [] ctor_args) ++
   str "struct " ++ ctor_name ++
   brace (prlist_with_sep fnl (fun s -> str "std::shared_ptr" ++ arrow (type_alias s) ++ str " value" ++ semicolon()) ctor_args) ++
   semicolon ()
@@ -229,11 +245,14 @@ let declare_constructor_function type_name = fun (ctor_name, ctor_args) ->
   let args = List.mapi (fun i n -> (type_alias n, str "a" ++ (str @@ string_of_int i))) ctor_args in
   let ctor_build = ctor_name ++ (prlist_with_sep colon (fun (tp, name) -> str "std::make_shared" ++ arrow tp ++ paren name) args |> brace) |> brace in
   let body = str "return " ++ ctor_build ++ semicolon () |> brace
-  in type_name ++ str " " ++ ctor_name ++ str "_ctor" ++ (
-      prlist_with_sep colon (fun (tp, name) -> tp ++ str " " ++ name) args |> paren
-    ) ++ body
+  in
+  pp_template_parameters_decl (List.fold_left extract_template_parameter [] ctor_args) ++
+  type_name ++ str " " ++ ctor_name ++ str "_ctor" ++ (
+    prlist_with_sep colon (fun (tp, name) -> tp ++ str " " ++ name) args |> paren
+  ) ++ body
 
 let define_variant = fun type_name ctors ->
+  (** pp_template_parameters_decl (extract_template_parameter [] ctors) ++*)
   str "struct " ++ type_name ++
   (
     str "std::variant" ++ (
@@ -241,13 +260,18 @@ let define_variant = fun type_name ctors ->
     ) ++ str " value" ++ semicolon () |> brace
   ) ++ semicolon ()
 
+
+
 (** Declare a new algebraic type *)
 let pp_newtype ip pl cv =
+  let pp_template_parameters_decl constructors_with_args_array =
+    let aux = List.fold_left extract_template_parameter in
+    let par = Array.fold_left aux [] (Array.map snd constructors_with_args_array) in
+    pp_template_parameters_decl par in
   let
     type_name = pp_global Type (IndRef ip) and
-  constructors_with_args_array = Array.mapi (fun idx ctor -> pp_global Cons (ConstructRef (ip, idx + 1)), ctor) cv
-  in
-  let forward_declaration = str "struct " ++ type_name ++ semicolon ()
+    constructors_with_args_array = Array.mapi (fun idx ctor -> pp_global Cons (ConstructRef (ip, idx + 1)), ctor) cv in
+  let forward_declaration = (pp_template_parameters_decl constructors_with_args_array) ++ str "struct " ++ type_name ++ semicolon ()
   and constructor_declarations = prvect_with_sep fnl declare_constructor constructors_with_args_array
   and variant_definition = define_variant type_name (Array.map fst constructors_with_args_array)
   and constructors_function = prvect_with_sep fnl (declare_constructor_function type_name) constructors_with_args_array
@@ -276,7 +300,7 @@ let define_fixpoint = fun ref def typ ->
     fixpoint_version ++ semicolon () ++ fnl ()
 
 let define_type = fun ref def typ ->
-  assert (List.is_empty def);
+  (** assert (List.is_empty def); *)
   str "using " ++ pp_global Type ref ++ str " = " ++ type_alias typ ++ semicolon ()
 
 let pp_decl = function
@@ -323,5 +347,5 @@ let cpp_descr = {
   sig_suffix = None;
   sig_preamble = (fun _ _ _ _ -> mt ());
   pp_sig = (fun _ -> mt ());
-  pp_decl = pp_decl;
+pp_decl = pp_decl;
 }
