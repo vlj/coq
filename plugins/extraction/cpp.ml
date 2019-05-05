@@ -235,11 +235,24 @@ let pp_template_parameters_decl parameter_lists =
     let lst_par_name = prlist_with_sep colon (fun par_name -> str "typename " ++ par_name) parameter_lists in
     str "template<" ++ lst_par_name ++ str ">"
 
+let pp_template_parameters_instantiate parameter_lists =
+  if List.is_empty parameter_lists then mt () else
+    let lst_par_name = prlist_with_sep colon (fun par_name -> par_name) parameter_lists in
+    lst_par_name |> arrow
+
 let declare_constructor = fun (ctor_name, ctor_args) ->
   pp_template_parameters_decl (List.fold_left extract_template_parameter [] ctor_args) ++
   str "struct " ++ ctor_name ++
   brace (prlist_with_sep fnl (fun s -> str "std::shared_ptr" ++ arrow (type_alias s) ++ str " value" ++ semicolon()) ctor_args) ++
   semicolon ()
+
+
+let get_qualified_name = fun (ctor_name, ctor_args) ->
+  let filtered_ctor = List.fold_left extract_template_parameter [] ctor_args in
+  if List.is_empty filtered_ctor then ctor_name else
+    let params = prlist_with_sep colon (fun s -> s) filtered_ctor in
+    ctor_name ++ arrow params
+
 
 let declare_constructor_function type_name = fun (ctor_name, ctor_args) ->
   let args = List.mapi (fun i n -> (type_alias n, str "a" ++ (str @@ string_of_int i))) ctor_args in
@@ -252,11 +265,11 @@ let declare_constructor_function type_name = fun (ctor_name, ctor_args) ->
   ) ++ body
 
 let define_variant = fun type_name ctors ->
-  (** pp_template_parameters_decl (extract_template_parameter [] ctors) ++*)
+  (** pp__parametdecl (extract_template_parameter [] ctors) ++*)
   str "struct " ++ type_name ++
   (
     str "std::variant" ++ (
-      prvect_with_sep colon (fun x -> x) ctors |> arrow
+      prvect_with_sep colon get_qualified_name ctors |> arrow
     ) ++ str " value" ++ semicolon () |> brace
   ) ++ semicolon ()
 
@@ -264,17 +277,19 @@ let define_variant = fun type_name ctors ->
 
 (** Declare a new algebraic type *)
 let pp_newtype ip pl cv =
-  let pp_template_parameters_decl constructors_with_args_array =
+  let get_parameters constructors_with_args_array=
     let aux = List.fold_left extract_template_parameter in
-    let par = Array.fold_left aux [] (Array.map snd constructors_with_args_array) in
-    pp_template_parameters_decl par in
+    Array.fold_left aux [] (Array.map snd constructors_with_args_array) in
   let
-    type_name = pp_global Type (IndRef ip) and
+    naked_typename = pp_global Type (IndRef ip) and
     constructors_with_args_array = Array.mapi (fun idx ctor -> pp_global Cons (ConstructRef (ip, idx + 1)), ctor) cv in
-  let forward_declaration = (pp_template_parameters_decl constructors_with_args_array) ++ str "struct " ++ type_name ++ semicolon ()
+  let qualified_typename = naked_typename ++ (pp_template_parameters_instantiate (get_parameters constructors_with_args_array)) and
+    template_decl = (pp_template_parameters_decl (get_parameters constructors_with_args_array))
+  in
+  let forward_declaration = template_decl ++ str "struct " ++ naked_typename ++ semicolon ()
   and constructor_declarations = prvect_with_sep fnl declare_constructor constructors_with_args_array
-  and variant_definition = define_variant type_name (Array.map fst constructors_with_args_array)
-  and constructors_function = prvect_with_sep fnl (declare_constructor_function type_name) constructors_with_args_array
+  and variant_definition = template_decl ++ define_variant naked_typename constructors_with_args_array
+  and constructors_function = prvect_with_sep fnl (declare_constructor_function qualified_typename) constructors_with_args_array
   in
   forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++ variant_definition ++  fnl() ++ constructors_function ++ fnl ()
 
@@ -347,5 +362,5 @@ let cpp_descr = {
   sig_suffix = None;
   sig_preamble = (fun _ _ _ _ -> mt ());
   pp_sig = (fun _ -> mt ());
-pp_decl = pp_decl;
+  pp_decl = pp_decl;
 }
