@@ -234,23 +234,25 @@ let qualified_type naked_typename tvar_names =
 
 
 let declare_constructor tvar_names (ctor_name, ctor_args) =
+  let member_decl = List.mapi (fun i s -> str "std::shared_ptr" ++ arrow (type_alias tvar_names s) ++ str (" value" ^ string_of_int i) ++ semicolon()) ctor_args
+  in
   pp_template_parameters_decl tvar_names ++
   str "struct " ++ ctor_name ++
-  brace (prlist_with_sep fnl (fun s -> str "std::shared_ptr" ++ arrow (type_alias tvar_names s) ++ str " value" ++ semicolon()) ctor_args) ++
+  brace (prlist_with_sep fnl (fun s -> s) member_decl) ++
   semicolon ()
 
 
 let declare_constructor_function naked_typename tvar_names (ctor_name, ctor_args) =
   let args = List.mapi (fun i n -> (type_alias tvar_names n, str "a" ++ (str @@ string_of_int i))) ctor_args in
-  let ctor_build = ctor_name ++ (prlist_with_sep colon (fun (tp, name) -> str "std::make_shared" ++ arrow tp ++ paren name) args |> brace) |> brace in
+  let ctor_build = qualified_type ctor_name tvar_names ++ (prlist_with_sep colon (fun (tp, name) -> str "std::make_shared" ++ arrow tp ++ paren name) args |> brace) |> brace in
   let body = str "return " ++ ctor_build ++ semicolon () |> brace
   in
   (** template<typename ...>*)
   pp_template_parameters_decl tvar_names ++
   (** type<..> *)
   qualified_type naked_typename  tvar_names ++
-  (** type_ctor *)
-  str " " ++ ctor_name ++ str "_ctor" ++
+  (** type_ctor<...> *)
+  str " " ++ qualified_type (ctor_name ++ str "_ctor") tvar_names ++
   (** arg lists *)
   (
     prlist_with_sep colon (fun (tp, name) -> tp ++ str " " ++ name) args |> paren
