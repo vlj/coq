@@ -18,8 +18,11 @@ open Miniml
 open Mlutil
 open Table
 open Common
+open Hashtbl
 
 (*s Scheme renaming issues. *)
+
+let name_to_type = Hashtbl.create 100;;
 
 let keywords =
   List.fold_right (fun s -> Id.Set.add (Id.of_string s))
@@ -99,7 +102,7 @@ let rec type_alias tvar_name = function
   | Tvar' _ -> str "TVAR'"
   | Tvar i -> (try pp_tvar (List.nth tvar_name (pred i)) with  _ -> str "ERROR")
   | Tglob (r, l) -> pp_global Type r ++ ((prlist_with_sep colon (type_alias tvar_name) l) |> arrow)
-  | Tarr (t1,t2) as e ->
+  | Tarr (t1,t2) ->
     (*let rec collect_arrow lst = function
       | Tarr (t1, t2) -> collect_arrow ( t1 :: lst) t2
       | x ->  x, lst
@@ -196,16 +199,20 @@ and pp_template_parameter_list env (ids,p,t) =
   in
   (pp_global Cons r), args, (pp_expr env' [] t)
 
-and pp_match_case env x =
-  let cons, types, s2 = pp_template_parameter_list env x in
+and pp_match_case (cons, types, s2) =
   let pattern_matching_decl = str "[=]" ++ paren (cons ++ str " v") and
-    variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
-  in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())
+  variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
+  in pattern_matching_decl ++ brace (str "return " ++ s2 ++ semicolon ())
 
 and pp_match_with matched_expr env pv =
+  let template_parameter_lists =
+    Array.map (pp_template_parameter_list env) pv and
+  get_tvar_names = function cons -> (try Hashtbl.find  name_to_type cons with _ -> []) in
+  let declare_type_as_usings =
+    prlist_with_sep fnl (fun s -> let tvar_name = pp_tvar s in str "using " ++ tvar_name ++ str " = " ++ tvar_name ++ semicolon ()) in
   let overload_call = str "overload" ++ (
       fnl () ++
-      prvect_with_sep (fun _ -> str "," ++ fnl ()) (pp_match_case env) pv |> v 0 |> paren
+      prvect_with_sep (fun _ -> str "," ++ fnl ()) pp_match_case template_parameter_lists  |> v 0 |> paren
 
     ) in str "std::visit" ++ paren (overload_call ++ str "," ++ matched_expr ++ str ".value")
 
@@ -287,6 +294,7 @@ let pp_newtype ip pl cv =
   and variant_definition = define_variant pl naked_typename constructors_with_args_array
   and constructors_function = prvect_with_sep fnl (declare_constructor_function naked_typename pl) constructors_with_args_array
   in
+  Array.iter (fun (name, _) -> Hashtbl.replace name_to_type name pl |> ignore) constructors_with_args_array;
   forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++ variant_definition ++  fnl() ++ constructors_function ++ fnl ()
 
 
