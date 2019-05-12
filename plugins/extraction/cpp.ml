@@ -232,13 +232,17 @@ let qualified_type naked_typename tvar_names =
       prlist_with_sep colon pp_tvar tvar_names)
       |> arrow )
 
+let declare_type_as_usings tvar_names =
+  prlist_with_sep fnl (fun s -> let tvar_name = pp_tvar s in str "using _" ++ tvar_name ++ str " = " ++ tvar_name ++ semicolon ()) tvar_names
 
 let declare_constructor tvar_names (ctor_name, ctor_args) =
   let member_decl = List.mapi (fun i s -> str "std::shared_ptr" ++ arrow (type_alias tvar_names s) ++ str (" value" ^ string_of_int i) ++ semicolon()) ctor_args
   in
   pp_template_parameters_decl tvar_names ++
   str "struct " ++ ctor_name ++
-  brace (prlist_with_sep fnl (fun s -> s) member_decl) ++
+  brace (
+    (** using _... = ...; *)
+    declare_type_as_usings tvar_names ++ prlist_with_sep fnl (fun s -> s) member_decl) ++
   semicolon ()
 
 
@@ -251,8 +255,8 @@ let declare_constructor_function naked_typename tvar_names (ctor_name, ctor_args
   pp_template_parameters_decl tvar_names ++
   (** type<..> *)
   qualified_type naked_typename  tvar_names ++
-  (** type_ctor<...> *)
-  str " " ++ qualified_type (ctor_name ++ str "_ctor") tvar_names ++
+  (** type_ctor *)
+  str " " ++ ctor_name ++ str "_ctor" ++
   (** arg lists *)
   (
     prlist_with_sep colon (fun (tp, name) -> tp ++ str " " ++ name) args |> paren
@@ -262,6 +266,9 @@ let define_variant tvar_names type_name ctors =
   pp_template_parameters_decl tvar_names ++
   str "struct " ++ type_name ++
   (
+    (** using _... = ...; *)
+    declare_type_as_usings tvar_names ++
+    (** std::variant<...> value; *)
     str "std::variant" ++ (
       prvect_with_sep colon (fun (n, tp) -> qualified_type n tvar_names) ctors |> arrow
     ) ++ str " value" ++ semicolon () |> brace
