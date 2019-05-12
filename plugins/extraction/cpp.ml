@@ -24,7 +24,7 @@ open Common
 let keywords =
   List.fold_right (fun s -> Id.Set.add (Id.of_string s))
     [ "struct"; "class"; "return"; "typedef"; "using";
-      "template"; "namespace"; "bool"; "int"]
+      "template"; "namespace"; "bool"; "int"; "default"]
     Id.Set.empty
 
 let pp_comment s = str"// "++h 0 s++fnl ()
@@ -62,6 +62,7 @@ y_combinator<std::decay_t<F>> make_y_combinator(F&& f) {
     return {std::forward<F>(f)};
 }" ++ fnl ()
 
+let pp_tvar id = str (Id.to_string id)
 let pr_id id =
   str @@ String.map (fun c -> if c == '\'' then '~' else c) (Id.to_string id)
 
@@ -93,17 +94,18 @@ let pp_apply st _ = function lst -> st ++ prlist paren lst
 
 let pp_global k r = str (Common.pp_global k r)
 
-let rec type_alias = function
-  | Tmeta _ | Tvar' _ -> assert false
-  | Tvar i -> str "tvar "
-  | Tglob (r, l) -> pp_global Type r
+let rec type_alias tvar_name = function
+  | Tmeta _ -> str "META"
+  | Tvar' _ -> str "TVAR'"
+  | Tvar i -> (try pp_tvar (List.nth tvar_name (pred i)) with  _ -> str "ERROR")
+  | Tglob (r, l) -> pp_global Type r ++ ((prlist_with_sep colon (type_alias tvar_name) l) |> arrow)
   | Tarr (t1,t2) as e ->
     (*let rec collect_arrow lst = function
       | Tarr (t1, t2) -> collect_arrow ( t1 :: lst) t2
       | x ->  x, lst
       in
       let out, in_lst = collect_arrow [] e in *)
-    str "std::function" ++ arrow (type_alias t2 ++ paren ([t1] |> prlist_with_sep colon type_alias )) ++ str " "
+    str "std::function" ++ arrow (type_alias tvar_name t2 ++ paren ([t1] |> prlist_with_sep colon (type_alias tvar_name))) ++ str " "
   | Tdummy _ -> str "tdummy "
   | Tunknown -> str "std::any"
   | Taxiom -> str "taxiom "
@@ -159,7 +161,7 @@ let rec pp_expr env args =
              ++ pp_expr env [] t)))
   | MLcase (typ,t, pv) ->
     let matched_expr =
-      if not (is_coinductive_type typ) then pp_expr env [] t |> fun s -> str "static_cast" ++ (type_alias typ |> arrow) ++ (s |> paren)
+      if not (is_coinductive_type typ) then pp_expr env [] t |> fun s -> str "static_cast" ++ (type_alias [] typ |> arrow) ++ (s |> paren)
       else paren (str "force" ++ spc () ++ pp_expr env [] t)
     in
     apply (pp_template_typecase matched_expr env pv)
@@ -220,56 +222,46 @@ and pp_fix env j (ids,bl) args =
            fnl () ++
            hov 2 (pp_apply (pr_id (ids.(j))) true args))))
 
+let pp_template_parameters_decl tvar_names =
+  str "template" ++ ((
+      prlist_with_sep colon (fun s -> str "typename " ++ pp_tvar s) tvar_names)
+      |> arrow )
 
-let rec extract_template_parameter lst = function
-  | Tmeta _ | Tvar' _ -> assert false
-  | Tvar i -> str "tvar " :: lst
-  | Tarr (t1,t2) -> extract_template_parameter (extract_template_parameter lst t1) t2
-  | Tdummy _
-  | Tglob _
-  | Tunknown
-  | Taxiom -> lst
+let qualified_type naked_typename tvar_names =
+  naked_typename ++ ((
+      prlist_with_sep colon pp_tvar tvar_names)
+      |> arrow )
 
-let pp_template_parameters_decl parameter_lists =
-  if List.is_empty parameter_lists then mt () else
-    let lst_par_name = prlist_with_sep colon (fun par_name -> str "typename " ++ par_name) parameter_lists in
-    str "template<" ++ lst_par_name ++ str ">"
 
-let pp_template_parameters_instantiate parameter_lists =
-  if List.is_empty parameter_lists then mt () else
-    let lst_par_name = prlist_with_sep colon (fun par_name -> par_name) parameter_lists in
-    lst_par_name |> arrow
-
-let declare_constructor = fun (ctor_name, ctor_args) ->
-  pp_template_parameters_decl (List.fold_left extract_template_parameter [] ctor_args) ++
+let declare_constructor tvar_names (ctor_name, ctor_args) =
+  pp_template_parameters_decl tvar_names ++
   str "struct " ++ ctor_name ++
-  brace (prlist_with_sep fnl (fun s -> str "std::shared_ptr" ++ arrow (type_alias s) ++ str " value" ++ semicolon()) ctor_args) ++
+  brace (prlist_with_sep fnl (fun s -> str "std::shared_ptr" ++ arrow (type_alias tvar_names s) ++ str " value" ++ semicolon()) ctor_args) ++
   semicolon ()
 
 
-let get_qualified_name = fun (ctor_name, ctor_args) ->
-  let filtered_ctor = List.fold_left extract_template_parameter [] ctor_args in
-  if List.is_empty filtered_ctor then ctor_name else
-    let params = prlist_with_sep colon (fun s -> s) filtered_ctor in
-    ctor_name ++ arrow params
-
-
-let declare_constructor_function type_name = fun (ctor_name, ctor_args) ->
-  let args = List.mapi (fun i n -> (type_alias n, str "a" ++ (str @@ string_of_int i))) ctor_args in
+let declare_constructor_function naked_typename tvar_names (ctor_name, ctor_args) =
+  let args = List.mapi (fun i n -> (type_alias tvar_names n, str "a" ++ (str @@ string_of_int i))) ctor_args in
   let ctor_build = ctor_name ++ (prlist_with_sep colon (fun (tp, name) -> str "std::make_shared" ++ arrow tp ++ paren name) args |> brace) |> brace in
   let body = str "return " ++ ctor_build ++ semicolon () |> brace
   in
-  pp_template_parameters_decl (List.fold_left extract_template_parameter [] ctor_args) ++
-  type_name ++ str " " ++ ctor_name ++ str "_ctor" ++ (
+  (** template<typename ...>*)
+  pp_template_parameters_decl tvar_names ++
+  (** type<..> *)
+  qualified_type naked_typename  tvar_names ++
+  (** type_ctor *)
+  str " " ++ ctor_name ++ str "_ctor" ++
+  (** arg lists *)
+  (
     prlist_with_sep colon (fun (tp, name) -> tp ++ str " " ++ name) args |> paren
   ) ++ body
 
-let define_variant = fun type_name ctors ->
-  (** pp__parametdecl (extract_template_parameter [] ctors) ++*)
+let define_variant tvar_names type_name ctors =
+  pp_template_parameters_decl tvar_names ++
   str "struct " ++ type_name ++
   (
     str "std::variant" ++ (
-      prvect_with_sep colon get_qualified_name ctors |> arrow
+      prvect_with_sep colon (fun (n, tp) -> qualified_type n tvar_names) ctors |> arrow
     ) ++ str " value" ++ semicolon () |> brace
   ) ++ semicolon ()
 
@@ -277,19 +269,13 @@ let define_variant = fun type_name ctors ->
 
 (** Declare a new algebraic type *)
 let pp_newtype ip pl cv =
-  let get_parameters constructors_with_args_array=
-    let aux = List.fold_left extract_template_parameter in
-    Array.fold_left aux [] (Array.map snd constructors_with_args_array) in
   let
     naked_typename = pp_global Type (IndRef ip) and
-    constructors_with_args_array = Array.mapi (fun idx ctor -> pp_global Cons (ConstructRef (ip, idx + 1)), ctor) cv in
-  let qualified_typename = naked_typename ++ (pp_template_parameters_instantiate (get_parameters constructors_with_args_array)) and
-    template_decl = (pp_template_parameters_decl (get_parameters constructors_with_args_array))
-  in
-  let forward_declaration = template_decl ++ str "struct " ++ naked_typename ++ semicolon ()
-  and constructor_declarations = prvect_with_sep fnl declare_constructor constructors_with_args_array
-  and variant_definition = template_decl ++ define_variant naked_typename constructors_with_args_array
-  and constructors_function = prvect_with_sep fnl (declare_constructor_function qualified_typename) constructors_with_args_array
+  constructors_with_args_array = Array.mapi (fun idx ctor -> pp_global Cons (ConstructRef (ip, idx + 1)), ctor) cv in
+  let forward_declaration = pp_template_parameters_decl pl ++ str "struct " ++ naked_typename ++ semicolon ()
+  and constructor_declarations = prvect_with_sep fnl (declare_constructor pl) constructors_with_args_array
+  and variant_definition = define_variant pl naked_typename constructors_with_args_array
+  and constructors_function = prvect_with_sep fnl (declare_constructor_function naked_typename pl) constructors_with_args_array
   in
   forward_declaration ++ fnl () ++ constructor_declarations ++ fnl () ++ variant_definition ++  fnl() ++ constructors_function ++ fnl ()
 
@@ -307,16 +293,16 @@ let define_fixpoint = fun ref def typ ->
     let lambda_definition = (if is_custom ref then str (find_custom ref)
                              else pp_expr (empty_env ()) [] def) in
     let to_be_combined =
-      str "[]" ++ paren ( str" auto " ++ name ) ++ str " -> " ++ type_alias typ ++
+      str "[]" ++ paren ( str" auto " ++ name ) ++ str " -> " ++ type_alias [] typ ++
       (fnl () ++ str "return " ++ lambda_definition ++ semicolon () |> v 1 |> brace)
     in
-    let fixpoint_version = str "const " ++ type_alias typ ++ str " " ++ name ++ str " = make_y_combinator" ++ paren to_be_combined
+    let fixpoint_version = str "const " ++ type_alias [] typ ++ str " " ++ name ++ str " = make_y_combinator" ++ paren to_be_combined
     in
     fixpoint_version ++ semicolon () ++ fnl ()
 
 let define_type = fun ref def typ ->
   (** assert (List.is_empty def); *)
-  str "using " ++ pp_global Type ref ++ str " = " ++ type_alias typ ++ semicolon ()
+  str "using " ++ pp_global Type ref ++ str " = " ++ type_alias [] typ  ++ semicolon ()
 
 let pp_decl = function
   | Dind (kn, defs) -> prvecti_with_sep spc
