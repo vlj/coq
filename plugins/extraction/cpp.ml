@@ -164,7 +164,7 @@ let rec pp_expr env args =
       if not (is_coinductive_type typ) then pp_expr env [] t |> fun s -> str "static_cast" ++ (type_alias [] typ |> arrow) ++ (s |> paren)
       else paren (str "force" ++ spc () ++ pp_expr env [] t)
     in
-    apply (pp_template_typecase matched_expr env pv)
+    apply (pp_match_with matched_expr env pv)
   | MLfix (i,ids,defs) ->
     let ids',env' = push_vars (List.rev (Array.to_list ids)) env in
     pp_fix env' i (Array.of_list (List.rev ids'),defs) args
@@ -196,15 +196,16 @@ and pp_template_parameter_list env (ids,p,t) =
   in
   (pp_global Cons r), args, (pp_expr env' [] t)
 
-and pp_template_typecase matched_expr env pv =
-  let pattern = (fun x -> let cons, types, s2 = pp_template_parameter_list env x in
-                  let type_specialization = mt () in
-                  let pattern_matching_decl = str "[=]" ++ paren (cons ++ str " v") and
-                    variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
-                  in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())) in
+and pp_match_case env x =
+  let cons, types, s2 = pp_template_parameter_list env x in
+  let pattern_matching_decl = str "[=]" ++ paren (cons ++ str " v") and
+    variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
+  in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())
+
+and pp_match_with matched_expr env pv =
   let overload_call = str "overload" ++ (
       fnl () ++
-      prvect_with_sep (fun _ -> str "," ++ fnl ()) pattern pv |> v 0 |> paren
+      prvect_with_sep (fun _ -> str "," ++ fnl ()) (pp_match_case env) pv |> v 0 |> paren
 
     ) in str "std::visit" ++ paren (overload_call ++ str "," ++ matched_expr ++ str ".value")
 
