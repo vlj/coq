@@ -1,4 +1,5 @@
 Require Extraction.
+Require Import List.
 
 Fixpoint f n :=
  match n with
@@ -19,5 +20,7 @@ Definition sigma: forall n, f n.
 Defined.
 
 
+
 Extraction Language CPP.
-Recursive Extraction sigma.
+(** Recursive Extraction sigma. *)
+Recursive Extraction hd.
