@@ -97,6 +97,17 @@ let pp_apply st _ = function lst -> st ++ prlist paren lst
 
 let pp_global k r = str (Common.pp_global k r)
 
+let pp_template_parameters_decl tvar_names =
+  str "template" ++ ((
+      prlist_with_sep colon (fun s -> str "typename " ++ pp_tvar s) tvar_names)
+      |> arrow )
+
+let qualified_type naked_typename tvar_names =
+  naked_typename ++ ((
+      prlist_with_sep colon pp_tvar tvar_names)
+      |> arrow )
+
+
 let rec type_alias tvar_name = function
   | Tmeta _ -> str "META"
   | Tvar' _ -> str "TVAR'"
@@ -164,7 +175,7 @@ let rec pp_expr env args =
              ++ pp_expr env [] t)))
   | MLcase (typ,t, pv) ->
     let matched_expr =
-      if not (is_coinductive_type typ) then pp_expr env [] t |> fun s -> str "static_cast" ++ (type_alias [] typ |> arrow) ++ (s |> paren)
+      if not (is_coinductive_type typ) then pp_expr env [] t (**|> fun s -> str "static_cast" ++ (type_alias [] typ |> arrow) ++ (s |> paren)*)
       else paren (str "force" ++ spc () ++ pp_expr env [] t)
     in
     apply (pp_match_with matched_expr env pv)
@@ -200,21 +211,27 @@ and pp_template_parameter_list env (ids,p,t) =
   (pp_global Cons r), args, (pp_expr env' [] t)
 
 and pp_match_case (cons, types, s2) =
-  let pattern_matching_decl = str "[=]" ++ paren (cons ++ str " v") and
-  variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
-  in pattern_matching_decl ++ brace (str "return " ++ s2 ++ semicolon ())
+  let tvar_names = (try Hashtbl.find  name_to_type cons with _ -> []) in
+  let pattern_matching_decl = str "[=]" ++ paren ((qualified_type cons tvar_names) ++ str " v") and
+    variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
+  in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())
 
 and pp_match_with matched_expr env pv =
   let template_parameter_lists =
-    Array.map (pp_template_parameter_list env) pv and
-  get_tvar_names = function cons -> (try Hashtbl.find  name_to_type cons with _ -> []) in
+    Array.map (pp_template_parameter_list env) pv in
+  let (cons, _, _) = template_parameter_lists.(0) in
+  let tvar_names = (try Hashtbl.find  name_to_type cons with _ -> []) in
   let declare_type_as_usings =
-    prlist_with_sep fnl (fun s -> let tvar_name = pp_tvar s in str "using " ++ tvar_name ++ str " = " ++ tvar_name ++ semicolon ()) in
+    prlist_with_sep fnl (fun s -> let tvar_name = pp_tvar s in str "using " ++ tvar_name ++ str " = decltype(" ++ matched_expr ++ str")::_" ++ tvar_name ++ semicolon ()) tvar_names in
   let overload_call = str "overload" ++ (
       fnl () ++
       prvect_with_sep (fun _ -> str "," ++ fnl ()) pp_match_case template_parameter_lists  |> v 0 |> paren
 
-    ) in str "std::visit" ++ paren (overload_call ++ str "," ++ matched_expr ++ str ".value")
+    ) in
+  (** using ... *)
+  declare_type_as_usings ++ fnl () ++
+  (** std::visit([](), ..) *)
+  str "std::visit" ++ paren (overload_call ++ str "," ++ matched_expr ++ str ".value")
 
 (*s names of the functions ([ids]) are already pushed in [env],
     and passed here just for convenience. *)
@@ -230,15 +247,6 @@ and pp_fix env j (ids,bl) args =
            fnl () ++
            hov 2 (pp_apply (pr_id (ids.(j))) true args))))
 
-let pp_template_parameters_decl tvar_names =
-  str "template" ++ ((
-      prlist_with_sep colon (fun s -> str "typename " ++ pp_tvar s) tvar_names)
-      |> arrow )
-
-let qualified_type naked_typename tvar_names =
-  naked_typename ++ ((
-      prlist_with_sep colon pp_tvar tvar_names)
-      |> arrow )
 
 let declare_type_as_usings tvar_names =
   prlist_with_sep fnl (fun s -> let tvar_name = pp_tvar s in str "using _" ++ tvar_name ++ str " = " ++ tvar_name ++ semicolon ()) tvar_names
