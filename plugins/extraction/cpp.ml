@@ -210,26 +210,26 @@ and pp_template_parameter_list env (ids,p,t) =
   in
   (pp_global Cons r), args, (pp_expr env' [] t)
 
-and pp_match_case (cons, types, s2) =
+and pp_match_case decltyp_ (cons, types, s2) =
   let tvar_names = (try Hashtbl.find  name_to_type cons with _ -> []) in
-  let pattern_matching_decl = str "[=]" ++ paren ((qualified_type cons tvar_names) ++ str " v") and
+  let qualified_type_with_decltype naked_typename tvar_names =
+    naked_typename ++ ((
+        prlist_with_sep colon (fun tvar_name -> str "typename " ++ decltyp_ ++ str "::" ++ (pp_tvar tvar_name)) tvar_names)
+        |> arrow )
+  in
+  let pattern_matching_decl = str "[=]" ++ paren ((qualified_type_with_decltype cons tvar_names) ++ str " v") and
     variable_name = prlist_with_sep fnl (fun s -> s ++ semicolon ()) (List.mapi (fun i s->str "const auto& " ++ s ++ str " = *v.value") types)
   in pattern_matching_decl ++ brace (variable_name ++ str "return " ++ s2 ++ semicolon ())
 
 and pp_match_with matched_expr env pv =
   let template_parameter_lists =
     Array.map (pp_template_parameter_list env) pv in
-  let (cons, _, _) = template_parameter_lists.(0) in
-  let tvar_names = (try Hashtbl.find  name_to_type cons with _ -> []) in
-  let declare_type_as_usings =
-    prlist_with_sep fnl (fun s -> let tvar_name = pp_tvar s in str "using " ++ tvar_name ++ str " = decltype(" ++ matched_expr ++ str")::_" ++ tvar_name ++ semicolon ()) tvar_names in
+  let decltype = (str "decltype(" ++ matched_expr ++ str")") in
   let overload_call = str "overload" ++ (
       fnl () ++
-      prvect_with_sep (fun _ -> str "," ++ fnl ()) pp_match_case template_parameter_lists  |> v 0 |> paren
+      prvect_with_sep (fun _ -> str "," ++ fnl ()) (pp_match_case decltype) template_parameter_lists  |> v 0 |> paren
 
     ) in
-  (** using ... *)
-  declare_type_as_usings ++ fnl () ++
   (** std::visit([](), ..) *)
   str "std::visit" ++ paren (overload_call ++ str "," ++ matched_expr ++ str ".value")
 
