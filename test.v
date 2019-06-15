@@ -20,7 +20,8 @@ Definition sigma: forall n, f n.
 Defined.
 
 
+Definition lst := cons 3 (cons 2 nil).
 
 Extraction Language CPP.
 (** Recursive Extraction sigma. *)
-Recursive Extraction hd.
+Recursive Extraction hd lst.
