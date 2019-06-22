@@ -98,21 +98,29 @@ let pp_apply st _ = function lst -> st ++ prlist paren lst
 let pp_global k r = str (Common.pp_global k r)
 
 let pp_template_parameters_decl tvar_names =
-  str "template" ++ ((
-      prlist_with_sep colon (fun s -> str "typename " ++ pp_tvar s) tvar_names)
-      |> arrow )
+  if List.is_empty tvar_names then mt ()
+  else
+    (str "template" ++ ((
+        prlist_with_sep colon (fun s -> str "typename " ++ pp_tvar s) tvar_names)
+        |> arrow ))
 
 let qualified_type naked_typename tvar_names =
-  naked_typename ++ ((
-      prlist_with_sep colon pp_tvar tvar_names)
-      |> arrow )
+  if List.is_empty tvar_names then naked_typename
+  else
+    naked_typename ++ ((
+        prlist_with_sep colon pp_tvar tvar_names)
+        |> arrow )
 
 
 let rec type_alias tvar_name = function
   | Tmeta _ -> str "META"
   | Tvar' _ -> str "TVAR'"
   | Tvar i -> (try pp_tvar (List.nth tvar_name (pred i)) with  _ -> str "ERROR")
-  | Tglob (r, l) -> pp_global Type r ++ ((prlist_with_sep colon (type_alias tvar_name) l) |> arrow)
+  | Tglob (r, l) -> let naked_typename = pp_global Type r in
+    naked_typename ++ (
+    if List.is_empty tvar_name then mt() else
+    ((prlist_with_sep colon (type_alias tvar_name) l) |> arrow)
+  )
   | Tarr (t1,t2) ->
     (*let rec collect_arrow lst = function
       | Tarr (t1, t2) -> collect_arrow ( t1 :: lst) t2
