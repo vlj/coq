@@ -286,18 +286,29 @@ let declare_constructor_function naked_typename tvar_names (ctor_name, ctor_args
     prlist_with_sep colon (fun (tp, name) -> tp ++ str " " ++ name) args |> paren
   ) ++ body
 
+
+let casting_operator naked_typename ctor =
+  naked_typename ++ (
+    ctor |> paren
+  ) ++ semicolon ()
+
 let define_variant tvar_names type_name ctors =
+  (** std::variant<...> value; *)
+  let variant = str "std::variant" ++ (
+      prvect_with_sep colon (fun (n, tp) -> qualified_type n tvar_names) ctors |> arrow
+    ) ++ str " value" ++ semicolon () and
+    (** cast operators *)
+  cast_operator = Array.mapi (fun idx ctor -> casting_operator type_name (fst ctor)) ctors |> prvect_with_sep fnl (fun x -> x)
+  in
   pp_template_parameters_decl tvar_names ++
   str "struct " ++ type_name ++
   (
     (** using _... = ...; *)
     declare_type_as_usings tvar_names ++
-    (** std::variant<...> value; *)
-    str "std::variant" ++ (
-      prvect_with_sep colon (fun (n, tp) -> qualified_type n tvar_names) ctors |> arrow
-    ) ++ str " value" ++ semicolon () |> brace
+    variant ++
+    cast_operator
+    |> brace
   ) ++ semicolon ()
-
 
 
 (** Declare a new algebraic type *)
