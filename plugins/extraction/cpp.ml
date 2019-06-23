@@ -268,11 +268,15 @@ let pp_template_parameters_decl2 parameters=
         |> arrow ))
 
 let collect_type_parameters tvar_names ctor_args =
- List.map (fun tp -> type_alias tvar_names tp) ctor_args
+  let filter_func lst = function
+  | Tvar i -> (try pp_tvar (List.nth tvar_names (pred i)) with  _ -> str "ERROR") :: lst
+  | _ -> lst  in
+ List.fold_left filter_func [] ctor_args
 
 let declare_constructor tvar_names (ctor_name, ctor_args) =
-  let parameters = collect_type_parameters tvar_names ctor_args and
-    member_decl = List.mapi (fun i s -> str "std::shared_ptr" ++ arrow (type_alias tvar_names s) ++ str (" value" ^ string_of_int i) ++ semicolon()) ctor_args
+  let
+    member_decl = List.mapi (fun i s -> str "std::shared_ptr" ++ arrow (type_alias tvar_names s) ++ str (" value" ^ string_of_int i) ++ semicolon()) ctor_args and
+    parameters = collect_type_parameters tvar_names ctor_args
   in
   pp_template_parameters_decl2 parameters ++
   str "struct " ++ ctor_name ++
