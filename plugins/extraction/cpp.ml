@@ -259,10 +259,22 @@ and pp_fix env j (ids,bl) args =
 let declare_type_as_usings tvar_names =
   prlist_with_sep fnl (fun s -> let tvar_name = pp_tvar s in str "using _" ++ tvar_name ++ str " = " ++ tvar_name ++ semicolon ()) tvar_names
 
+
+let pp_template_parameters_decl2 parameters=
+  if List.is_empty parameters then mt ()
+  else
+    (str "template" ++ ((
+        prlist_with_sep colon (fun s -> str "typename " ++ s) parameters)
+        |> arrow ))
+
+let collect_type_parameters tvar_names ctor_args =
+ List.map (fun tp -> type_alias tvar_names tp) ctor_args
+
 let declare_constructor tvar_names (ctor_name, ctor_args) =
-  let member_decl = List.mapi (fun i s -> str "std::shared_ptr" ++ arrow (type_alias tvar_names s) ++ str (" value" ^ string_of_int i) ++ semicolon()) ctor_args
+  let parameters = collect_type_parameters tvar_names ctor_args and
+    member_decl = List.mapi (fun i s -> str "std::shared_ptr" ++ arrow (type_alias tvar_names s) ++ str (" value" ^ string_of_int i) ++ semicolon()) ctor_args
   in
-  pp_template_parameters_decl tvar_names ++
+  pp_template_parameters_decl2 parameters ++
   str "struct " ++ ctor_name ++
   brace (
     (** using _... = ...; *)
