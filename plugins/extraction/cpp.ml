@@ -257,7 +257,7 @@ and pp_fix env j (ids,bl) args =
 
 
 let declare_type_as_usings tvar_names =
-  prlist_with_sep fnl (fun s -> let tvar_name = pp_tvar s in str "using _" ++ tvar_name ++ str " = " ++ tvar_name ++ semicolon ()) tvar_names
+  prlist_with_sep fnl (fun s -> str "using _" ++ s ++ str " = " ++ s ++ semicolon ()) tvar_names
 
 
 let pp_template_parameters_decl2 parameters=
@@ -282,7 +282,7 @@ let declare_constructor tvar_names (ctor_name, ctor_args) =
   str "struct " ++ ctor_name ++
   brace (
     (** using _... = ...; *)
-    declare_type_as_usings tvar_names ++ prlist_with_sep fnl (fun s -> s) member_decl) ++
+    declare_type_as_usings parameters ++ prlist_with_sep fnl (fun s -> s) member_decl) ++
   semicolon ()
 
 
@@ -320,7 +320,7 @@ let define_variant tvar_names type_name ctors =
   str "struct " ++ type_name ++
   (
     (** using _... = ...; *)
-    declare_type_as_usings tvar_names ++
+    declare_type_as_usings (List.map pp_tvar tvar_names) ++
     variant ++
     cast_operator
     |> brace
