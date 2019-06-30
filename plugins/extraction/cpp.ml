@@ -309,9 +309,16 @@ let casting_operator naked_typename ctor =
   ) ++ semicolon ()
 
 let define_variant tvar_names type_name ctors =
+  let variant_aux_function (typename, tparams) =
+    let parameters = collect_type_parameters tvar_names tparams in
+    if List.is_empty tparams then typename
+    else
+      typename ++ ((
+          prlist_with_sep colon (fun s -> s) parameters)
+          |> arrow ) in
   (** std::variant<...> value; *)
   let variant = str "std::variant" ++ (
-      prvect_with_sep colon (fun (n, tp) -> qualified_type n tvar_names) ctors |> arrow
+      prvect_with_sep colon variant_aux_function ctors |> arrow
     ) ++ str " value" ++ semicolon () and
     (** cast operators *)
   cast_operator = Array.mapi (fun idx ctor -> casting_operator type_name (fst ctor)) ctors |> prvect_with_sep fnl (fun x -> x)
