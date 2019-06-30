@@ -287,8 +287,15 @@ let declare_constructor tvar_names (ctor_name, ctor_args) =
 
 
 let declare_constructor_function naked_typename tvar_names (ctor_name, ctor_args) =
+  let aux_function (typename, tparams) =
+    let parameters = collect_type_parameters tvar_names tparams in
+    if List.is_empty tparams then typename
+    else
+      typename ++ ((
+          prlist_with_sep colon (fun s -> s) parameters)
+          |> arrow ) in
   let args = List.mapi (fun i n -> (type_alias tvar_names n, str "a" ++ (str @@ string_of_int i))) ctor_args in
-  let ctor_build = qualified_type ctor_name tvar_names ++ (prlist_with_sep colon (fun (tp, name) -> str "std::make_shared" ++ arrow tp ++ paren name) args |> brace) |> brace in
+  let ctor_build = aux_function (ctor_name, ctor_args) ++ (prlist_with_sep colon (fun (tp, name) -> str "std::make_shared" ++ arrow tp ++ paren name) args |> brace) |> brace in
   let body = str "return " ++ ctor_build ++ semicolon () |> brace
   in
   (** template<typename ...>*)
