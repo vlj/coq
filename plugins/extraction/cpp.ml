@@ -285,17 +285,17 @@ let declare_constructor tvar_names (ctor_name, ctor_args) =
     declare_type_as_usings parameters ++ prlist_with_sep fnl (fun s -> s) member_decl) ++
   semicolon ()
 
-
-let declare_constructor_function naked_typename tvar_names (ctor_name, ctor_args) =
-  let aux_function (typename, tparams) =
+let templated_type_name tvar_names (typename, tparams) =
     let parameters = collect_type_parameters tvar_names tparams in
     if List.is_empty parameters then typename
     else
       typename ++ ((
           prlist_with_sep colon (fun s -> s) parameters)
-          |> arrow ) in
+          |> arrow )
+
+let declare_constructor_function naked_typename tvar_names (ctor_name, ctor_args) =
   let args = List.mapi (fun i n -> (type_alias tvar_names n, str "a" ++ (str @@ string_of_int i))) ctor_args in
-  let ctor_build = aux_function (ctor_name, ctor_args) ++ (prlist_with_sep colon (fun (tp, name) -> str "std::make_shared" ++ arrow tp ++ paren name) args |> brace) |> brace in
+  let ctor_build = (templated_type_name tvar_names) (ctor_name, ctor_args) ++ (prlist_with_sep colon (fun (tp, name) -> str "std::make_shared" ++ arrow tp ++ paren name) args |> brace) |> brace in
   let body = str "return " ++ ctor_build ++ semicolon () |> brace
   in
   (** template<typename ...>*)
@@ -310,25 +310,18 @@ let declare_constructor_function naked_typename tvar_names (ctor_name, ctor_args
   ) ++ body
 
 
-let casting_operator naked_typename ctor =
-  naked_typename ++ (
-    ctor |> paren
-  ) ++ semicolon ()
 
 let define_variant tvar_names type_name ctors =
-  let variant_aux_function (typename, tparams) =
-    let parameters = collect_type_parameters tvar_names tparams in
-    if List.is_empty parameters then typename
-    else
-      typename ++ ((
-          prlist_with_sep colon (fun s -> s) parameters)
-          |> arrow ) in
+  let casting_operator naked_typename ctor =
+    naked_typename ++ (
+      (templated_type_name tvar_names ctor) |> paren
+    ) ++ semicolon () in
   (** std::variant<...> value; *)
   let variant = str "std::variant" ++ (
-      prvect_with_sep colon variant_aux_function ctors |> arrow
+      prvect_with_sep colon (templated_type_name tvar_names) ctors |> arrow
     ) ++ str " value" ++ semicolon () and
     (** cast operators *)
-  cast_operator = Array.mapi (fun idx ctor -> casting_operator type_name (fst ctor)) ctors |> prvect_with_sep fnl (fun x -> x)
+  cast_operator = Array.map (casting_operator type_name) ctors |> prvect_with_sep fnl (fun x -> x)
   in
   pp_template_parameters_decl tvar_names ++
   str "struct " ++ type_name ++
