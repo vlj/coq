@@ -289,7 +289,7 @@ let declare_constructor tvar_names (ctor_name, ctor_args) =
 let declare_constructor_function naked_typename tvar_names (ctor_name, ctor_args) =
   let aux_function (typename, tparams) =
     let parameters = collect_type_parameters tvar_names tparams in
-    if List.is_empty tparams then typename
+    if List.is_empty parameters then typename
     else
       typename ++ ((
           prlist_with_sep colon (fun s -> s) parameters)
@@ -318,7 +318,7 @@ let casting_operator naked_typename ctor =
 let define_variant tvar_names type_name ctors =
   let variant_aux_function (typename, tparams) =
     let parameters = collect_type_parameters tvar_names tparams in
-    if List.is_empty tparams then typename
+    if List.is_empty parameters then typename
     else
       typename ++ ((
           prlist_with_sep colon (fun s -> s) parameters)
